@@ -1,0 +1,11 @@
+{
+  "rules": {
+    "aging_rows": {
+      ".read": true,
+      ".write": true,
+      "$rowId": {
+        ".validate": "newData.hasChildren(['id','store','itemno'])"
+      }
+    }
+  }
+}
