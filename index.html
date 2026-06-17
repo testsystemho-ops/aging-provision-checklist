@@ -271,7 +271,7 @@ tbody td{padding:8px 8px;vertical-align:middle;text-align:center}
 <div class="toast" id="toast"></div>
 
 <!-- ===== LOGIN ===== -->
-<div id="loginPage" class="lp">
+<div id="loginPage" class="lp" style="display:flex">
   <div class="lb">
     <div class="ll">
       <div class="ico">📋</div>
@@ -624,37 +624,43 @@ function tPw() {
 }
 
 function doLogin() {
-  var u = document.getElementById('lUser').value.trim().toLowerCase();
-  var p = document.getElementById('lPass').value;
-  var errEl = document.getElementById('lErr');
-  if (!u || !p) {
-    errEl.textContent = '❌ กรุณากรอก Username และ Password';
-    errEl.classList.add('show');
-    return;
-  }
-  if (USERS[u] && USERS[u].pass === p) {
-    CU = { username: u, role: USERS[u].role, label: USERS[u].label };
-    // Switch pages
-    document.getElementById('loginPage').style.display = 'none';
-    document.getElementById('appPage').style.display  = 'block';
-    // Update UI
-    document.getElementById('uName').textContent = CU.label;
-    document.getElementById('uRole').textContent = CU.username;
-    document.body.classList.toggle('role-soa', u === 'soa');
-    // Theme
-    var savedTheme = localStorage.getItem('aging_theme') || 'blue';
-    setTheme(savedTheme);
-    // Pre-fill form
-    document.getElementById('mDate').value = new Date().toISOString().slice(0, 10);
-    document.getElementById('mAud').value  = CU.label;
-    errEl.classList.remove('show');
-    // Init app (populates dropdowns, then connects Firebase)
-    initApp();
-  } else {
-    errEl.textContent = '❌ Username หรือ Password ไม่ถูกต้อง';
-    errEl.classList.add('show');
-    document.getElementById('lPass').value = '';
-    document.getElementById('lUser').select();
+  try {
+    var u = document.getElementById('lUser').value.trim().toLowerCase();
+    var p = document.getElementById('lPass').value.trim();
+    var errEl = document.getElementById('lErr');
+    if (!u || !p) {
+      errEl.textContent = '❌ กรุณากรอก Username และ Password';
+      errEl.classList.add('show');
+      return;
+    }
+    if (USERS[u] && USERS[u].pass === p) {
+      CU = { username: u, role: USERS[u].role, label: USERS[u].label };
+      // Switch pages
+      document.getElementById('loginPage').style.display = 'none';
+      document.getElementById('appPage').style.display  = 'block';
+      // Update UI
+      document.getElementById('uName').textContent = CU.label;
+      document.getElementById('uRole').textContent = CU.username;
+      document.body.classList.toggle('role-soa', u === 'soa');
+      // Theme
+      var savedTheme = (typeof localStorage !== 'undefined' && localStorage.getItem('aging_theme')) || 'blue';
+      setTheme(savedTheme);
+      // Pre-fill form
+      document.getElementById('mDate').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('mAud').value  = CU.label;
+      errEl.classList.remove('show');
+      // Init app
+      try { initApp(); } catch(initErr) { console.warn('initApp error:', initErr); }
+    } else {
+      errEl.textContent = '❌ Username หรือ Password ไม่ถูกต้อง';
+      errEl.classList.add('show');
+      document.getElementById('lPass').value = '';
+      document.getElementById('lUser').select();
+    }
+  } catch(e) {
+    console.error('doLogin error:', e);
+    var el2 = document.getElementById('lErr');
+    if (el2) { el2.textContent = '❌ เกิดข้อผิดพลาด: ' + e.message; el2.classList.add('show'); }
   }
 }
 
@@ -669,6 +675,7 @@ function doLogout() {
   sessionIds = new Set();
   document.getElementById('appPage').style.display  = 'none';
   document.getElementById('loginPage').style.display = 'flex';
+  document.getElementById('lErr').classList.remove('show');
   document.getElementById('lUser').value = '';
   document.getElementById('lPass').value = '';
   showSync('offline');
@@ -678,7 +685,7 @@ function doLogout() {
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Enter') {
     var lp = document.getElementById('loginPage');
-    if (lp && lp.style.display !== 'none') { doLogin(); }
+    if (lp && lp.style.display !== 'none' && lp.style.display !== '') { doLogin(); }
   }
   if (e.key === 'Escape') { closeEditMo(); }
 });
@@ -953,8 +960,8 @@ function rowActs(r){
   var canEdit = CU && (CU.role==='admin' || CU.role==='soa');
   var canDel  = CU && CU.role==='admin';
   var b = '';
-  if (canEdit) b += '<button class="bed" onclick="openEdit(''+r.fbKey+'')">✏</button>';
-  if (canDel)  b += '<button class="be"  onclick="delRow(''+r.fbKey+'')">✕</button>';
+  if (canEdit) b += '<button class="bed" onclick="openEdit(\''+r.fbKey+'\')">✏</button>';
+  if (canDel)  b += '<button class="be"  onclick="delRow(\''+r.fbKey+'\')">✕</button>';
   return b || '-';
 }
 
@@ -1151,8 +1158,7 @@ function makeCSV(data){
       r.cond||'', '"'+(r.rmCond||'')+'"'
     ].join(',');
   });
-  return '﻿' + [h.join(',')].concat(rows).join('
-');
+  return '﻿' + [h.join(',')].concat(rows).join('\n');
 }
 function dlCSV(c,n){ var b=new Blob([c],{type:'text/csv;charset=utf-8'});var u=URL.createObjectURL(b);var a=document.createElement('a');a.href=u;a.download=n;a.click();URL.revokeObjectURL(u); }
 function exportMyCSV(){
