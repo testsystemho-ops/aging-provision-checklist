@@ -601,589 +601,809 @@ tbody td{padding:8px 8px;vertical-align:middle;text-align:center}
 </div>
 </div><!-- /appPage -->
 
-<!-- Firebase Compat SDK (v9 compat - works as regular script, no import needed) -->
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 
+<!-- ====================================================
+     BLOCK 1: UI + AUTH — No Firebase dependency
+     These functions ALWAYS work, even offline
+     ==================================================== -->
 <script>
-// ===== FIREBASE INIT =====
-const firebaseConfig={
-  apiKey:"AIzaSyDuzNUPrBFVsWvXknbZTXJ2b_qKR0LYHJE",
-  authDomain:"aging-provision-checklist.firebaseapp.com",
-  databaseURL:"https://aging-provision-checklist-default-rtdb.asia-southeast1.firebasedatabase.app/",
-  projectId:"aging-provision-checklist",
-  storageBucket:"aging-provision-checklist.firebasestorage.app",
-  messagingSenderId:"794315783983",
-  appId:"1:794315783983:web:41a21c6604a0332d11ebda"
-};
-firebase.initializeApp(firebaseConfig);
-const db=firebase.database();
-const RREF='aging_rows';
+'use strict';
 
 // ===== AUTH =====
-const USERS={soa:{pass:'makroho',role:'soa',label:'SOA User'},admin:{pass:'adminho',role:'admin',label:'Admin'}};
-let CU=null;
+var USERS = {
+  soa:   { pass: 'makroho', role: 'soa',   label: 'SOA User' },
+  admin: { pass: 'adminho', role: 'admin', label: 'Admin' }
+};
+var CU = null;
 
-function tPw(){const i=document.getElementById('lPass');const b=document.getElementById('pwt');i.type=i.type==='password'?'text':'password';b.textContent=i.type==='password'?'👁':'🙈';}
+function tPw() {
+  var i = document.getElementById('lPass');
+  var b = document.getElementById('pwt');
+  i.type = (i.type === 'password') ? 'text' : 'password';
+  b.textContent = (i.type === 'password') ? '👁' : '🙈';
+}
 
-function doLogin(){
-  const u=document.getElementById('lUser').value.trim().toLowerCase();
-  const p=document.getElementById('lPass').value;
-  const e=document.getElementById('lErr');
-  if(USERS[u]&&USERS[u].pass===p){
-    CU={username:u,...USERS[u]};
-    document.getElementById('loginPage').style.display='none';
-    document.getElementById('appPage').style.display='block';
-    document.getElementById('uName').textContent=USERS[u].label;
-    document.getElementById('uRole').textContent=u;
-    document.body.classList.toggle('role-soa',u==='soa');
-    setTheme(localStorage.getItem('aging_theme')||'blue');
-    document.getElementById('mDate').value=new Date().toISOString().slice(0,10);
-    document.getElementById('mAud').value=USERS[u].label;
-    e.classList.remove('show');
+function doLogin() {
+  var u = document.getElementById('lUser').value.trim().toLowerCase();
+  var p = document.getElementById('lPass').value;
+  var errEl = document.getElementById('lErr');
+  if (!u || !p) {
+    errEl.textContent = '❌ กรุณากรอก Username และ Password';
+    errEl.classList.add('show');
+    return;
+  }
+  if (USERS[u] && USERS[u].pass === p) {
+    CU = { username: u, role: USERS[u].role, label: USERS[u].label };
+    // Switch pages
+    document.getElementById('loginPage').style.display = 'none';
+    document.getElementById('appPage').style.display  = 'block';
+    // Update UI
+    document.getElementById('uName').textContent = CU.label;
+    document.getElementById('uRole').textContent = CU.username;
+    document.body.classList.toggle('role-soa', u === 'soa');
+    // Theme
+    var savedTheme = localStorage.getItem('aging_theme') || 'blue';
+    setTheme(savedTheme);
+    // Pre-fill form
+    document.getElementById('mDate').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('mAud').value  = CU.label;
+    errEl.classList.remove('show');
+    // Init app (populates dropdowns, then connects Firebase)
     initApp();
   } else {
-    e.classList.add('show');
-    document.getElementById('lPass').value='';
-    document.getElementById('lUser').focus();
+    errEl.textContent = '❌ Username หรือ Password ไม่ถูกต้อง';
+    errEl.classList.add('show');
+    document.getElementById('lPass').value = '';
+    document.getElementById('lUser').select();
   }
 }
 
-function doLogout(){
-  db.ref(RREF).off();fbListenerActive=false;CU=null;
-  document.getElementById('appPage').style.display='none';
-  document.getElementById('loginPage').style.display='flex';
-  document.getElementById('lUser').value='';document.getElementById('lPass').value='';
+function doLogout() {
+  // Detach Firebase listener if active
+  try {
+    if (window._fbRef) { window._fbRef.off(); }
+  } catch(e) {}
+  window._fbListenerActive = false;
+  CU = null;
+  allRows = [];
+  sessionIds = new Set();
+  document.getElementById('appPage').style.display  = 'none';
+  document.getElementById('loginPage').style.display = 'flex';
+  document.getElementById('lUser').value = '';
+  document.getElementById('lPass').value = '';
   showSync('offline');
 }
 
-document.addEventListener('keydown',function(e){
-  if(e.key==='Enter'&&document.getElementById('loginPage').style.display!=='none')doLogin();
-  if(e.key==='Escape')closeEditMo();
+// Enter key on login
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') {
+    var lp = document.getElementById('loginPage');
+    if (lp && lp.style.display !== 'none') { doLogin(); }
+  }
+  if (e.key === 'Escape') { closeEditMo(); }
 });
 
 // ===== THEME =====
-function setTheme(t){
-  document.body.dataset.theme=t;
-  document.querySelectorAll('.tb').forEach(function(b){b.classList.toggle('active',b.dataset.t===t);});
-  localStorage.setItem('aging_theme',t);
+function setTheme(t) {
+  document.body.dataset.theme = t;
+  document.querySelectorAll('.tb').forEach(function(b) {
+    b.classList.toggle('active', b.dataset.t === t);
+  });
+  localStorage.setItem('aging_theme', t);
 }
 
 // ===== SYNC STATUS =====
-function showSync(s){
-  var el=document.getElementById('syncStatus');
-  if(!el)return;
-  var map={online:'🟢 Realtime',syncing:'🔄 Syncing...',offline:'🔴 Offline',error:'⚠️ Error'};
-  el.textContent=map[s]||s;el.className='sync-status '+s;
+function showSync(s) {
+  var el = document.getElementById('syncStatus');
+  if (!el) return;
+  var map = { online:'🟢 Realtime', syncing:'🔄 Syncing...', offline:'🔴 Offline', error:'⚠️ Error' };
+  el.textContent = map[s] || s;
+  el.className = 'sync-status ' + s;
 }
 
-// ===== FIREBASE REALTIME =====
-var allRows=[];
-var sessionIds=new Set();
-var fbListenerActive=false;
+// ===== DATA =====
+var allRows = [];
+var sessionIds = new Set();
+window._fbListenerActive = false;
+window._fbRef = null;
 
-function startFbListener(){
-  if(fbListenerActive)return;
-  fbListenerActive=true;
-  showSync('syncing');
-  db.ref(RREF).on('value',function(snap){
-    var data=snap.val();
-    allRows=data?Object.entries(data).map(function(e){return Object.assign({},e[1],{fbKey:e[0]});}) : [];
-    showSync('online');
-    updateBadges();renderMy();renderAll();renderDash();
-  },function(err){
-    showSync('error');showToast('⚠️ Firebase: '+err.message,true);
+function updateBadges() {
+  var t  = allRows.length;
+  var ok = allRows.filter(function(r){ return r.display!=='no' && r.priceyn!=='no' && r.cond!=='no'; }).length;
+  ['allBdg','allCnt','sTotal'].forEach(function(id){
+    var el=document.getElementById(id); if(el) el.textContent=t;
   });
-}
-
-function fbAdd(row,cb){
-  showSync('syncing');
-  var nr=db.ref(RREF).push();
-  row.fbKey=nr.key;
-  nr.set(cleanRow(row)).then(function(){showSync('online');if(cb)cb(row.fbKey);}).catch(function(e){showSync('error');showToast('❌ บันทึกไม่สำเร็จ: '+e.message,true);});
-}
-
-function fbUpdate(fbKey,row){
-  showSync('syncing');
-  db.ref(RREF+'/'+fbKey).set(cleanRow(row)).then(function(){showSync('online');}).catch(function(e){showSync('error');showToast('❌ แก้ไขไม่สำเร็จ',true);});
-}
-
-function fbDelete(fbKey,cb){
-  showSync('syncing');
-  db.ref(RREF+'/'+fbKey).remove().then(function(){showSync('online');if(cb)cb();}).catch(function(e){showSync('error');showToast('❌ ลบไม่สำเร็จ',true);});
-}
-
-function cleanRow(r){
-  var f=['id','store','date','auditor','dept','itemno','desc','price','aging','com','count','diff',
-    'display','rmDisplay','priceyn','rmPrice','cond','rmCond','storeName','zone','regional','sm','am'];
-  var o={};
-  f.forEach(function(k){if(r[k]!==undefined&&r[k]!==null&&r[k]!=='')o[k]=r[k];});
-  return o;
-}
-
-// ===== BADGES =====
-function updateBadges(){
-  var t=allRows.length;
-  var ok=allRows.filter(function(r){return r.display!=='no'&&r.priceyn!=='no'&&r.cond!=='no';}).length;
-  document.getElementById('allBdg').textContent=t;
-  document.getElementById('allCnt').textContent=t;
-  document.getElementById('sTotal').textContent=t;
-  document.getElementById('sOk').textContent=ok;
-  document.getElementById('sIss').textContent=t-ok;
-}
-
-// ===== ITEM DB =====
-var ITEM_DB=null;var itemDbReady=false;
-function loadItemDB(cb){
-  if(itemDbReady){if(cb)cb();return;}
-  var ov=document.getElementById('ldOverlay');
-  document.getElementById('ldMsg').textContent='กำลังโหลดฐานข้อมูลสินค้า 135,111 รายการ...';
-  ov.classList.add('show');
-  var s=document.createElement('script');s.src='aging_items.js';
-  s.onload=function(){
-    if(typeof window.ITEM_DB!=='undefined')ITEM_DB=window.ITEM_DB;
-    itemDbReady=true;ov.classList.remove('show');if(cb)cb();
-  };
-  s.onerror=function(){ov.classList.remove('show');itemDbReady=true;if(cb)cb();};
-  document.head.appendChild(s);
+  var okEl=document.getElementById('sOk');   if(okEl)  okEl.textContent=ok;
+  var issEl=document.getElementById('sIss'); if(issEl) issEl.textContent=t-ok;
 }
 
 // ===== STORE DB =====
-var STORE_DB={"1":["บมจ.ซีพี แอ็กซ์ตร้า สาขาลาดพร้าว 1","Zone9","Regional 2","คุณ เอกธัช นาวิกบุตร","Tien-Hung Chou"],"2":["บมจ.ซีพี แอ็กซ์ตร้า สาขาแจ้งวัฒนะ 2","Zone9","Regional 2","คุณ เอกธัช นาวิกบุตร","Thitikarn Poolsawasd"],"3":["บมจ.ซีพี แอ็กซ์ตร้า สาขาศรีนครินทร์ 3","Zone10","Regional 2","คุณ อารีย์ นิ่มกลาง","Tien-Hung Chou"],"4":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบางบอน 4","Zone6","Regional 2","คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล","Ornanong Sangfai"],"5":["บมจ.ซีพี แอ็กซ์ตร้า สาขาชลบุรี 5","Zone13","Regional 3","คุณ เสถียร ผลขาว","Wattarapoo Kanjana"],"6":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเชียงใหม่ 6","Zone1","Regional 1","คุณ พิชิต คันธาเวช","Suphanan Chanlaset"],"7":["บมจ.ซีพี แอ็กซ์ตร้า สาขานครราชสีมา 7","Zone11","Regional 3","คุณ ณัฐวัฒน์ เดชโนนสังข์","Kanda Prasert"],"8":["บมจ.ซีพี แอ็กซ์ตร้า สาขารังสิต 8","Zone12","Regional 3","คุณ พจนีย์ กลั่นเขตกิจ","Sirada Phruksatrakul"],"9":["บมจ.ซีพี แอ็กซ์ตร้า สาขาหาดใหญ่ 9","Zone17","Regional 4","คุณ พงศิกร รังษีพลาสวัสดิ์","Sainan Lirdariyapongkul"],"10":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอุดรธานี 10","Zone3","Regional 1","คุณ มะลิวัลย์ โขงชัยภูมิ","Pannawich Pathomwattananurak"],"11":["บมจ.ซีพี แอ็กซ์ตร้า สาขาพิษณุโลก 11","Zone2","Regional 1","คุณ ธีระพงษ์ อินจุ้มสาย","Pongsiri Kamsaengdee"],"12":["บมจ.ซีพี แอ็กซ์ตร้า สาขาขอนแก่น 12","Zone4","Regional 1","คุณ สุมาลี หาญสว่าง","Pannawich Pathomwattananurak"],"13":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสุราษฎร์ธานี 13","Zone16","Regional 4","คุณ บุษรา ไชยเสน","Sanur Chamram"],"14":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอุบลราชธานี 14","Zone11","Regional 3","คุณ ณัฐวัฒน์ เดชโนนสังข์","Uraiwan Nisup"],"15":["บมจ.ซีพี แอ็กซ์ตร้า สาขาระยอง 15","Zone14","Regional 3","คุณ รัตวัชร์ พงศ์วัจนาทิน","Wattarapoo Kanjana"],"16":["บมจ.ซีพี แอ็กซ์ตร้า สาขานครสวรรค์ 16","Zone5","Regional 1","คุณ ลัดดาวัลย์ ธรรมศร","Pongsiri Kamsaengdee"],"17":["บมจ.ซีพี แอ็กซ์ตร้า สาขาจรัญสนิทวงศ์ 17","Zone7","Regional 2","คุณ ธนกร วุฒิเดชเกรียงไกร","Ornanong Sangfai"],"18":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสาทร 18","Zone8","Regional 2","คุณ ศุจิกา พงษากาล","Ornanong Sangfai"],"19":["บมจ.ซีพี แอ็กซ์ตร้า สาขานครปฐม 19","Zone6","Regional 2","คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล","Thitiwat Yangyuenthiwat"],"20":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสุรินทร์ 20","Zone11","Regional 3","คุณ ณัฐวัฒน์ เดชโนนสังข์","Uraiwan Nisup"],"21":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสามเสน 21","Zone7","Regional 2","คุณ ธนกร วุฒิเดชเกรียงไกร","Thitikarn Poolsawasd"],"22":["บมจ.ซีพี แอ็กซ์ตร้า สาขานครศรีธรรมราช 22","Zone17","Regional 4","คุณ พงศิกร รังษีพลาสวัสดิ์","Sainan Lirdariyapongkul"],"23":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเชียงราย 23","Zone1","Regional 1","คุณ พิชิต คันธาเวช","Suphanan Chanlaset"],"24":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสกลนคร 24","Zone3","Regional 1","คุณ มะลิวัลย์ โขงชัยภูมิ","Pannawich Pathomwattananurak"],"25":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสุพรรณบุรี 25","Zone5","Regional 1","คุณ ลัดดาวัลย์ ธรรมศร","Sirada Phruksatrakul"],"26":["บมจ.ซีพี แอ็กซ์ตร้า สาขาจันทบุรี 26","Zone14","Regional 3","คุณ รัตวัชร์ พงศ์วัจนาทิน","Wattarapoo Kanjana"],"27":["บมจ.ซีพี แอ็กซ์ตร้า สาขาภูเก็ต 27","Zone16","Regional 4","คุณ บุษรา ไชยเสน","Sanur Chamram"],"28":["บมจ.ซีพี แอ็กซ์ตร้า สาขาร้อยเอ็ด 28","Zone4","Regional 1","คุณ สุมาลี หาญสว่าง","Uraiwan Nisup"],"29":["บมจ.ซีพี แอ็กซ์ตร้า สาขาตรัง 29","Zone17","Regional 4","คุณ พงศิกร รังษีพลาสวัสดิ์","Sainan Lirdariyapongkul"],"30":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสระแก้ว 30","Zone12","Regional 3","คุณ พจนีย์ กลั่นเขตกิจ","Wattarapoo Kanjana"],"31":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเกาะสมุย 31","Zone17","Regional 4","คุณ พงศิกร รังษีพลาสวัสดิ์","Sanur Chamram"],"32":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบุรีรัมย์ 32","Zone11","Regional 3","คุณ ณัฐวัฒน์ เดชโนนสังข์","Kanda Prasert"],"33":["บมจ.ซีพี แอ็กซ์ตร้า สาขาศรีสะเกษ 33","Zone11","Regional 3","คุณ ณัฐวัฒน์ เดชโนนสังข์","Uraiwan Nisup"],"34":["บมจ.ซีพี แอ็กซ์ตร้า สาขาลำพูน 34","Zone1","Regional 1","คุณ พิชิต คันธาเวช","Suphanan Chanlaset"],"35":["บมจ.ซีพี แอ็กซ์ตร้า สาขากระบี่ 35","Zone16","Regional 4","คุณ บุษรา ไชยเสน","Sainan Lirdariyapongkul"],"36":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเพชรบุรี 36","Zone15","Regional 3","คุณ วรรณิภา บุญจริง","Thitiwat Yangyuenthiwat"],"37":["บมจ.ซีพี แอ็กซ์ตร้า สาขาชัยภูมิ 37","Zone4","Regional 1","คุณ สุมาลี หาญสว่าง","Kanda Prasert"],"38":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสระบุรี 38","Zone5","Regional 1","คุณ ลัดดาวัลย์ ธรรมศร","Sirada Phruksatrakul"],"39":["บมจ.ซีพี แอ็กซ์ตร้า สาขาปราณบุรี 39","Zone15","Regional 3","คุณ วรรณิภา บุญจริง","Thitiwat Yangyuenthiwat"],"40":["บมจ.ซีพี แอ็กซ์ตร้า สาขาฉะเชิงเทรา 40","Zone13","Regional 3","คุณ เสถียร ผลขาว","Wattarapoo Kanjana"],"41":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเชียงใหม่2 41","Zone1","Regional 1","คุณ พิชิต คันธาเวช","Suphanan Chanlaset"],"42":["บมจ.ซีพี แอ็กซ์ตร้า สาขารามอินทรา 42","Zone9","Regional 2","คุณ เอกธัช นาวิกบุตร","Tien-Hung Chou"],"43":["บมจ.ซีพี แอ็กซ์ตร้า สาขาชุมพร 43","Zone15","Regional 3","คุณ วรรณิภา บุญจริง","Sanur Chamram"],"44":["บมจ.ซีพี แอ็กซ์ตร้า สาขาพัทยา 44","Zone14","Regional 3","คุณ รัตวัชร์ พงศ์วัจนาทิน","Wattarapoo Kanjana"],"45":["บมจ.ซีพี แอ็กซ์ตร้า สาขากำแพงเพชร 45","Zone2","Regional 1","คุณ ธีระพงษ์ อินจุ้มสาย","Pongsiri Kamsaengdee"],"46":["บมจ.ซีพี แอ็กซ์ตร้า สาขากาญจนบุรี 46","Zone6","Regional 2","คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล","Thitiwat Yangyuenthiwat"],"47":["บมจ.ซีพี แอ็กซ์ตร้า สาขาลพบุรี 47","Zone5","Regional 1","คุณ ลัดดาวัลย์ ธรรมศร","Sirada Phruksatrakul"],"48":["บมจ.ซีพี แอ็กซ์ตร้า สาขาหนองคาย 48","Zone3","Regional 1","คุณ มะลิวัลย์ โขงชัยภูมิ","Pannawich Pathomwattananurak"],"49":["บมจ.ซีพี แอ็กซ์ตร้า สาขาราชบุรี 49","Zone6","Regional 2","คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล","Thitiwat Yangyuenthiwat"],"50":["บมจ.ซีพี แอ็กซ์ตร้า สาขาแม่ริม 50","Zone1","Regional 1","คุณ พิชิต คันธาเวช","Suphanan Chanlaset"],"51":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอยุธยา 51","Zone12","Regional 3","คุณ พจนีย์ กลั่นเขตกิจ","Sirada Phruksatrakul"],"52":["บมจ.ซีพี แอ็กซ์ตร้า สาขาลำปาง 52","Zone2","Regional 1","คุณ ธีระพงษ์ อินจุ้มสาย","Suphanan Chanlaset"],"53":["บมจ.ซีพี แอ็กซ์ตร้า สาขาหัวหิน 53","Zone15","Regional 3","คุณ วรรณิภา บุญจริง","Thitiwat Yangyuenthiwat"],"54":["บมจ.ซีพี แอ็กซ์ตร้า สาขาคลองหลวง 54","Zone12","Regional 3","คุณ พจนีย์ กลั่นเขตกิจ","Sirada Phruksatrakul"],"55":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเลย 55","Zone3","Regional 1","คุณ มะลิวัลย์ โขงชัยภูมิ","Pannawich Pathomwattananurak"],"56":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเพชรบูรณ์ 56","Zone5","Regional 1","คุณ ลัดดาวัลย์ ธรรมศร","Pongsiri Kamsaengdee"],"57":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบางพลี 57","Zone8","Regional 2","คุณ ศุจิกา พงษากาล","Tien-Hung Chou"],"58":["บมจ.ซีพี แอ็กซ์ตร้า สาขามุกดาหาร 58","Zone3","Regional 1","คุณ มะลิวัลย์ โขงชัยภูมิ","Uraiwan Nisup"],"59":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสตูล 59","Zone17","Regional 4","คุณ พงศิกร รังษีพลาสวัสดิ์","Sainan Lirdariyapongkul"],"60":["บมจ.ซีพี แอ็กซ์ตร้า สาขาตราด 60","Zone14","Regional 3","คุณ รัตวัชร์ พงศ์วัจนาทิน","Wattarapoo Kanjana"],"61":["บมจ.ซีพี แอ็กซ์ตร้า สาขาชุมแพ 61","Zone4","Regional 1","คุณ สุมาลี หาญสว่าง","Pannawich Pathomwattananurak"],"62":["บมจ.ซีพี แอ็กซ์ตร้า สาขาราไวย์ 62","Zone16","Regional 4","คุณ บุษรา ไชยเสน","Sanur Chamram"],"63":["บมจ.ซีพี แอ็กซ์ตร้า สาขานครพนม 63","Zone3","Regional 1","คุณ มะลิวัลย์ โขงชัยภูมิ","Pannawich Pathomwattananurak"],"64":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเกาะพะงัน 64","Zone17","Regional 4","คุณ พงศิกร รังษีพลาสวัสดิ์","Sanur Chamram"],"65":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบึงกาฬ 65","Zone3","Regional 1","คุณ มะลิวัลย์ โขงชัยภูมิ","Pannawich Pathomwattananurak"],"66":["บมจ.ซีพี แอ็กซ์ตร้า สาขาพัทยาเหนือ 66","Zone14","Regional 3","คุณ รัตวัชร์ พงศ์วัจนาทิน","Wattarapoo Kanjana"],"67":["บมจ.ซีพี แอ็กซ์ตร้า สาขาแม่สาย 67","Zone1","Regional 1","คุณ พิชิต คันธาเวช","Suphanan Chanlaset"],"68":["บมจ.ซีพี แอ็กซ์ตร้า สาขาศาลายา 68","Zone6","Regional 2","คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล","Thitiwat Yangyuenthiwat"],"69":["บมจ.ซีพี แอ็กซ์ตร้า สาขาพัทลุง 69","Zone16","Regional 4","คุณ บุษรา ไชยเสน","Sainan Lirdariyapongkul"],"70":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสุโขทัย 70","Zone2","Regional 1","คุณ ธีระพงษ์ อินจุ้มสาย","Pongsiri Kamsaengdee"],"71":["บมจ.ซีพี แอ็กซ์ตร้า สาขาป่าตอง 71","Zone16","Regional 4","คุณ บุษรา ไชยเสน","Sanur Chamram"],"72":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสมุทรสาคร 72","Zone6","Regional 2","คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล","Thitiwat Yangyuenthiwat"],"73":["บมจ.ซีพี แอ็กซ์ตร้า สาขาแม่สอด 73","Zone2","Regional 1","คุณ ธีระพงษ์ อินจุ้มสาย","Pongsiri Kamsaengdee"],"74":["บมจ.ซีพี แอ็กซ์ตร้า สาขาปากช่อง 74","Zone5","Regional 1","คุณ ลัดดาวัลย์ ธรรมศร","Kanda Prasert"],"75":["บมจ.ซีพี แอ็กซ์ตร้า สาขาถลาง 75","Zone16","Regional 4","คุณ บุษรา ไชยเสน","Sanur Chamram"],"76":["บมจ.ซีพี แอ็กซ์ตร้า สาขาระนอง 76","Zone15","Regional 3","คุณ วรรณิภา บุญจริง","Sanur Chamram"],"77":["บมจ.ซีพี แอ็กซ์ตร้า สาขาละไม 77","Zone17","Regional 4","คุณ พงศิกร รังษีพลาสวัสดิ์","Sanur Chamram"],"78":["บมจ.ซีพี แอ็กซ์ตร้า สาขากัลปพฤกษ์ 78","Zone8","Regional 2","คุณ ศุจิกา พงษากาล","Ornanong Sangfai"],"79":["บมจ.ซีพี แอ็กซ์ตร้า สาขายโสธร 79","Zone4","Regional 1","คุณ สุมาลี หาญสว่าง","Uraiwan Nisup"],"80":["บมจ.ซีพี แอ็กซ์ตร้า สาขามหาสารคาม 80","Zone4","Regional 1","คุณ สุมาลี หาญสว่าง","Kanda Prasert"],"81":["บมจ.ซีพี แอ็กซ์ตร้า สาขาฝาง 81","Zone1","Regional 1","คุณ พิชิต คันธาเวช","Suphanan Chanlaset"],"82":["บมจ.ซีพี แอ็กซ์ตร้า สาขานครนายก 82","Zone12","Regional 3","คุณ พจนีย์ กลั่นเขตกิจ","Wattarapoo Kanjana"],"83":["บมจ.ซีพี แอ็กซ์ตร้า สาขานครอินทร์ 83","Zone7","Regional 2","คุณ ธนกร วุฒิเดชเกรียงไกร","Thitikarn Poolsawasd"],"84":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบ้านเพ 84","Zone14","Regional 3","คุณ รัตวัชร์ พงศ์วัจนาทิน","Wattarapoo Kanjana"],"85":["บมจ.ซีพี แอ็กซ์ตร้า สาขาทุ่งสง 85","Zone17","Regional 4","คุณ พงศิกร รังษีพลาสวัสดิ์","Sainan Lirdariyapongkul"],"86":["บมจ.ซีพี แอ็กซ์ตร้า สาขาศรีนครินทร์2 86","Zone10","Regional 2","คุณ อารีย์ นิ่มกลาง","Tien-Hung Chou"],"87":["บมจ.ซีพี แอ็กซ์ตร้า สาขาพะเยา 87","Zone1","Regional 1","คุณ พิชิต คันธาเวช","Suphanan Chanlaset"],"89":["บมจ.ซีพี แอ็กซ์ตร้า สาขาพิษณุโลก2 89","Zone2","Regional 1","คุณ ธีระพงษ์ อินจุ้มสาย","Pongsiri Kamsaengdee"],"96":["บมจ.ซีพี แอ็กซ์ตร้า สาขาทาวน์อินทาวน์ 96","Zone10","Regional 2","คุณ อารีย์ นิ่มกลาง","Tien-Hung Chou"],"100":["บมจ.ซีพี แอ็กซ์ตร้า สาขาแพร่ 100","Zone2","Regional 1","คุณ ธีระพงษ์ อินจุ้มสาย","Suphanan Chanlaset"],"101":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเกาะช้าง 101","Zone14","Regional 3","คุณ รัตวัชร์ พงศ์วัจนาทิน","Wattarapoo Kanjana"],"102":["บมจ.ซีพี แอ็กซ์ตร้า สาขานครราชสีมา2 102","Zone11","Regional 3","คุณ ณัฐวัฒน์ เดชโนนสังข์","Kanda Prasert"],"103":["บมจ.ซีพี แอ็กซ์ตร้า สาขาน่าน 103","Zone2","Regional 1","คุณ ธีระพงษ์ อินจุ้มสาย","Suphanan Chanlaset"],"104":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอ่าวนาง 104","Zone16","Regional 4","คุณ บุษรา ไชยเสน","Sainan Lirdariyapongkul"],"105":["บมจ.ซีพี แอ็กซ์ตร้า สาขากะรน 105","Zone16","Regional 4","คุณ บุษรา ไชยเสน","Sanur Chamram"],"106":["บมจ.ซีพี แอ็กซ์ตร้า สาขาวารินชำราบ 106","Zone11","Regional 3","คุณ ณัฐวัฒน์ เดชโนนสังข์","Uraiwan Nisup"],"107":["บมจ.ซีพี แอ็กซ์ตร้า สาขาหนองบัวลำภู 107","Zone3","Regional 1","คุณ มะลิวัลย์ โขงชัยภูมิ","Pannawich Pathomwattananurak"],"108":["บมจ.ซีพี แอ็กซ์ตร้า สาขาหนองจอก 108","Zone13","Regional 3","คุณ เสถียร ผลขาว","Tien-Hung Chou"],"109":["บมจ.ซีพี แอ็กซ์ตร้า สาขาแหลมฉบัง 109","Zone13","Regional 3","คุณ เสถียร ผลขาว","Wattarapoo Kanjana"],"110":["บมจ.ซีพี แอ็กซ์ตร้า สาขาประจวบคีรีขันธ์ 110","Zone15","Regional 3","คุณ วรรณิภา บุญจริง","Thitiwat Yangyuenthiwat"],"111":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเพชรเกษม 111","Zone6","Regional 2","คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล","Ornanong Sangfai"],"112":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบางปู 112","Zone8","Regional 2","คุณ ศุจิกา พงษากาล",""],"113":["บมจ.ซีพี แอ็กซ์ตร้า สาขาวังหิน 113","Zone9","Regional 2","คุณ เอกธัช นาวิกบุตร","Tien-Hung Chou"],"114":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสิงห์บุรี 114","Zone5","Regional 1","คุณ ลัดดาวัลย์ ธรรมศร","Sirada Phruksatrakul"],"115":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบางบัวทอง 115","Zone7","Regional 2","คุณ ธนกร วุฒิเดชเกรียงไกร","Thitikarn Poolsawasd"],"116":["บมจ.ซีพี แอ็กซ์ตร้า สาขากาฬสินธุ์ 116","Zone4","Regional 1","คุณ สุมาลี หาญสว่าง","Uraiwan Nisup"],"117":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอุดมสุข 117","Zone10","Regional 2","คุณ อารีย์ นิ่มกลาง","Tien-Hung Chou"],"118":["บมจ.ซีพี แอ็กซ์ตร้า สาขารามคำแหง(สัมมากร) 118","Zone9","Regional 2","คุณ เอกธัช นาวิกบุตร","Tien-Hung Chou"],"119":["บมจ.ซีพี แอ็กซ์ตร้า สาขาพิจิตร 119","Zone5","Regional 1","คุณ ลัดดาวัลย์ ธรรมศร","Pongsiri Kamsaengdee"],"120":["บมจ.ซีพี แอ็กซ์ตร้า สาขาปทุมธานี 120","Zone7","Regional 2","คุณ ธนกร วุฒิเดชเกรียงไกร","Sirada Phruksatrakul"],"121":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบดินทรเดชา 121","Zone9","Regional 2","คุณ เอกธัช นาวิกบุตร","Thitikarn Poolsawasd"],"122":["บมจ.ซีพี แอ็กซ์ตร้า สาขาประชาอุทิศ 122","Zone8","Regional 2","คุณ ศุจิกา พงษากาล","Ornanong Sangfai"],"123":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสุขุมวิท71 123","Zone8","Regional 2","คุณ ศุจิกา พงษากาล","Tien-Hung Chou"],"124":["บมจ.ซีพี แอ็กซ์ตร้า สาขานวมินทร์70 124","Zone9","Regional 2","คุณ เอกธัช นาวิกบุตร","Tien-Hung Chou"],"125":["บมจ.ซีพี แอ็กซ์ตร้า สาขาชะอำ 125","Zone15","Regional 3","คุณ วรรณิภา บุญจริง","Thitiwat Yangyuenthiwat"],"126":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอ่อนนุช 126","Zone10","Regional 2","คุณ อารีย์ นิ่มกลาง","Tien-Hung Chou"],"127":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสุขสวัสดิ์ 127","Zone8","Regional 2","คุณ ศุจิกา พงษากาล","Ornanong Sangfai"],"128":["บมจ.ซีพี แอ็กซ์ตร้า สาขากบินทร์บุรี 128","Zone12","Regional 3","คุณ พจนีย์ กลั่นเขตกิจ","Wattarapoo Kanjana"],"129":["บมจ.ซีพี แอ็กซ์ตร้า สาขาลาดกระบัง 129","Zone13","Regional 3","คุณ เสถียร ผลขาว","Tien-Hung Chou"],"130":["บมจ.ซีพี แอ็กซ์ตร้า สาขานาทองเจริญ 130","Zone12","Regional 3","คุณ พจนีย์ กลั่นเขตกิจ","Sirada Phruksatrakul"],"131":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบ่อวิน 131","Zone14","Regional 3","คุณ รัตวัชร์ พงศ์วัจนาทิน","Wattarapoo Kanjana"],"132":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสัตหีบ 132","Zone14","Regional 3","คุณ รัตวัชร์ พงศ์วัจนาทิน","Wattarapoo Kanjana"],"133":["บมจ.ซีพี แอ็กซ์ตร้า สาขารามคำแหง24 133","Zone10","Regional 2","คุณ อารีย์ นิ่มกลาง","Tien-Hung Chou"],"134":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอมตะนคร 134","Zone13","Regional 3","คุณ เสถียร ผลขาว","Wattarapoo Kanjana"],"135":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบางคอแหลม 135","Zone8","Regional 2","คุณ ศุจิกา พงษากาล","Ornanong Sangfai"],"136":["บมจ.ซีพี แอ็กซ์ตร้า สาขาขอนแก่น2 136","Zone4","Regional 1","คุณ สุมาลี หาญสว่าง","Pannawich Pathomwattananurak"],"137":["บมจ.ซีพี แอ็กซ์ตร้า สาขาวงศกร2 137","Zone10","Regional 2","คุณ อารีย์ นิ่มกลาง","Tien-Hung Chou"],"138":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเหม่งจ๋าย 138","Zone10","Regional 2","คุณ อารีย์ นิ่มกลาง","Thitikarn Poolsawasd"],"139":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสุขุมวิท22 139","Zone10","Regional 2","คุณ อารีย์ นิ่มกลาง","Tien-Hung Chou"],"140":["บมจ.ซีพี แอ็กซ์ตร้า สาขาถนนจันทน์ 140","Zone7","Regional 2","คุณ ธนกร วุฒิเดชเกรียงไกร","Tien-Hung Chou"],"141":["บมจ.ซีพี แอ็กซ์ตร้า สาขาลำลูกกา 141","Zone12","Regional 3","คุณ พจนีย์ กลั่นเขตกิจ","Sirada Phruksatrakul"],"142":["บมจ.ซีพี แอ็กซ์ตร้า สาขาแพรกษา 142","Zone8","Regional 2","คุณ ศุจิกา พงษากาล","Tien-Hung Chou"],"143":["บมจ.ซีพี แอ็กซ์ตร้า สาขาประดิษฐ์มนูธรรม 143","Zone9","Regional 2","คุณ เอกธัช นาวิกบุตร","Tien-Hung Chou"],"144":["บมจ.ซีพี แอ็กซ์ตร้า สาขาตลาดรุ่งโรจน์(คลอง4) 144","Zone12","Regional 3","คุณ พจนีย์ กลั่นเขตกิจ","Sirada Phruksatrakul"],"145":["บมจ.ซีพี แอ็กซ์ตร้า สาขาพงษ์เพชร 145","Zone7","Regional 2","คุณ ธนกร วุฒิเดชเกรียงไกร","Ornanong Sangfai"],"146":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอุตรดิตถ์ 146","Zone2","Regional 1","คุณ ธีระพงษ์ อินจุ้มสาย","Pongsiri Kamsaengdee"],"147":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเมืองทอง 147","Zone9","Regional 2","คุณ เอกธัช นาวิกบุตร","Thitikarn Poolsawasd"],"148":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเลียบคลอง2 148","Zone13","Regional 3","คุณ เสถียร ผลขาว","Tien-Hung Chou"],"149":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอ้อมน้อย 149","Zone6","Regional 2","คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล","Thitiwat Yangyuenthiwat"],"150":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสนามบินน้ำ 150","Zone7","Regional 2","คุณ ธนกร วุฒิเดชเกรียงไกร","Thitikarn Poolsawasd"],"151":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเทพรักษ์ 151","Zone9","Regional 2","คุณ เอกธัช นาวิกบุตร","Tien-Hung Chou"],"152":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสมุทรสงคราม 152","Zone6","Regional 2","คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล","Thitiwat Yangyuenthiwat"],"153":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเวียงสระ 153","Zone17","Regional 4","คุณ พงศิกร รังษีพลาสวัสดิ์","Sanur Chamram"],"154":["บมจ.ซีพี แอ็กซ์ตร้า สาขาปราจีนบุรี 154","Zone12","Regional 3","คุณ พจนีย์ กลั่นเขตกิจ","Wattarapoo Kanjana"],"155":["บมจ.ซีพี แอ็กซ์ตร้า สาขาปิ่นเกล้า 155","Zone7","Regional 2","คุณ ธนกร วุฒิเดชเกรียงไกร","Ornanong Sangfai"],"156":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสมุทรปราการ 156","Zone8","Regional 2","คุณ ศุจิกา พงษากาล","Tien-Hung Chou"],"157":["บมจ.ซีพี แอ็กซ์ตร้า สาขานครราชสีมา3 (เซฟวัน) 157","Zone11","Regional 3","คุณ ณัฐวัฒน์ เดชโนนสังข์","Kanda Prasert"],"158":["บมจ.ซีพี แอ็กซ์ตร้า สาขานครสวรรค์ 2 (พรหมนิมิต) 158","Zone5","Regional 1","คุณ ลัดดาวัลย์ ธรรมศร","Pongsiri Kamsaengdee"],"159":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอุดรธานี 2 (บ้านเลื่อม) 159","Zone3","Regional 1","คุณ มะลิวัลย์ โขงชัยภูมิ","Pannawich Pathomwattananurak"],"160":["บมจ.ซีพี แอ็กซ์ตร้า สาขามหาชัย 160","Zone6","Regional 2","คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล","Thitiwat Yangyuenthiwat"],"161":["บมจ.ซีพี แอ็กซ์ตร้า สาขาขอนแก่น3 (บ้านโนนม่วง) 161","Zone4","Regional 1","คุณ สุมาลี หาญสว่าง","Pannawich Pathomwattananurak"],"162":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอมตะนคร 2 162","Zone13","Regional 3","คุณ เสถียร ผลขาว","Wattarapoo Kanjana"],"163":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสงขลา 163","Zone17","Regional 4","คุณ พงศิกร รังษีพลาสวัสดิ์","Sainan Lirdariyapongkul"],"164":["บมจ.ซีพี แอ็กซ์ตร้า สาขาชัยนาท 164","Zone5","Regional 1","คุณ ลัดดาวัลย์ ธรรมศร","Sirada Phruksatrakul"],"165":["บมจ.ซีพี แอ็กซ์ตร้า สาขาถนนศรีอยุธยา 165","Zone10","Regional 2","คุณ อารีย์ นิ่มกลาง","Thitikarn Poolsawasd"],"166":["บมจ.ซีพี แอ็กซ์ตร้า สาขาราไวย์ 2 166","Zone16","Regional 4","คุณ บุษรา ไชยเสน","Sanur Chamram"],"167":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเชียงใหม่ (จอมทอง) 167","Zone1","Regional 1","คุณ พิชิต คันธาเวช","Suphanan Chanlaset"],"168":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบ้านบึง (ชลบุรี) 168","Zone13","Regional 3","คุณ เสถียร ผลขาว","Wattarapoo Kanjana"],"169":["บมจ.ซีพี แอ็กซ์ตร้า สาขาพังงา 169","Zone15","Regional 3","คุณ วรรณิภา บุญจริง","Sanur Chamram"],"170":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอำนาจเจริญ 170","Zone11","Regional 3","คุณ ณัฐวัฒน์ เดชโนนสังข์","Uraiwan Nisup"],"171":["บมจ.ซีพี แอ็กซ์ตร้า สาขาจอหอ (นครราชสีมา) 171","Zone11","Regional 3","คุณ ณัฐวัฒน์ เดชโนนสังข์","Kanda Prasert"],"172":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบ้านไผ่ 172","Zone4","Regional 1","คุณ สุมาลี หาญสว่าง","Pannawich Pathomwattananurak"],"175":["บมจ.ซีพี แอ็กซ์ตร้า สาขาแฮปปี้แทท (ฟอเรสเทียส์ - บางนา) 175","Zone8","Regional 2","คุณ ศุจิกา พงษากาล","Tien-Hung Chou"],"301":["บมจ.ซีพี แอ็กซ์ตร้า สาขาพระราม4 301","Zone7","Regional 2","คุณ ธนกร วุฒิเดชเกรียงไกร","Ornanong Sangfai"],"303":["บมจ.ซีพี แอ็กซ์ตร้า สาขาศิริมังคลาจารย์ 303","Zone1","Regional 1","คุณ พิชิต คันธาเวช","Suphanan Chanlaset"]};
+var STORE_DB = {"1":["บมจ.ซีพี แอ็กซ์ตร้า สาขาลาดพร้าว 1","Zone9","Regional 2","คุณ เอกธัช นาวิกบุตร","Tien-Hung Chou"],"2":["บมจ.ซีพี แอ็กซ์ตร้า สาขาแจ้งวัฒนะ 2","Zone9","Regional 2","คุณ เอกธัช นาวิกบุตร","Thitikarn Poolsawasd"],"3":["บมจ.ซีพี แอ็กซ์ตร้า สาขาศรีนครินทร์ 3","Zone10","Regional 2","คุณ อารีย์ นิ่มกลาง","Tien-Hung Chou"],"4":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบางบอน 4","Zone6","Regional 2","คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล","Ornanong Sangfai"],"5":["บมจ.ซีพี แอ็กซ์ตร้า สาขาชลบุรี 5","Zone13","Regional 3","คุณ เสถียร ผลขาว","Wattarapoo Kanjana"],"6":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเชียงใหม่ 6","Zone1","Regional 1","คุณ พิชิต คันธาเวช","Suphanan Chanlaset"],"7":["บมจ.ซีพี แอ็กซ์ตร้า สาขานครราชสีมา 7","Zone11","Regional 3","คุณ ณัฐวัฒน์ เดชโนนสังข์","Kanda Prasert"],"8":["บมจ.ซีพี แอ็กซ์ตร้า สาขารังสิต 8","Zone12","Regional 3","คุณ พจนีย์ กลั่นเขตกิจ","Sirada Phruksatrakul"],"9":["บมจ.ซีพี แอ็กซ์ตร้า สาขาหาดใหญ่ 9","Zone17","Regional 4","คุณ พงศิกร รังษีพลาสวัสดิ์","Sainan Lirdariyapongkul"],"10":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอุดรธานี 10","Zone3","Regional 1","คุณ มะลิวัลย์ โขงชัยภูมิ","Pannawich Pathomwattananurak"],"11":["บมจ.ซีพี แอ็กซ์ตร้า สาขาพิษณุโลก 11","Zone2","Regional 1","คุณ ธีระพงษ์ อินจุ้มสาย","Pongsiri Kamsaengdee"],"12":["บมจ.ซีพี แอ็กซ์ตร้า สาขาขอนแก่น 12","Zone4","Regional 1","คุณ สุมาลี หาญสว่าง","Pannawich Pathomwattananurak"],"13":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสุราษฎร์ธานี 13","Zone16","Regional 4","คุณ บุษรา ไชยเสน","Sanur Chamram"],"14":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอุบลราชธานี 14","Zone11","Regional 3","คุณ ณัฐวัฒน์ เดชโนนสังข์","Uraiwan Nisup"],"15":["บมจ.ซีพี แอ็กซ์ตร้า สาขาระยอง 15","Zone14","Regional 3","คุณ รัตวัชร์ พงศ์วัจนาทิน","Wattarapoo Kanjana"],"16":["บมจ.ซีพี แอ็กซ์ตร้า สาขานครสวรรค์ 16","Zone5","Regional 1","คุณ ลัดดาวัลย์ ธรรมศร","Pongsiri Kamsaengdee"],"17":["บมจ.ซีพี แอ็กซ์ตร้า สาขาจรัญสนิทวงศ์ 17","Zone7","Regional 2","คุณ ธนกร วุฒิเดชเกรียงไกร","Ornanong Sangfai"],"18":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสาทร 18","Zone8","Regional 2","คุณ ศุจิกา พงษากาล","Ornanong Sangfai"],"19":["บมจ.ซีพี แอ็กซ์ตร้า สาขานครปฐม 19","Zone6","Regional 2","คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล","Thitiwat Yangyuenthiwat"],"20":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสุรินทร์ 20","Zone11","Regional 3","คุณ ณัฐวัฒน์ เดชโนนสังข์","Uraiwan Nisup"],"21":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสามเสน 21","Zone7","Regional 2","คุณ ธนกร วุฒิเดชเกรียงไกร","Thitikarn Poolsawasd"],"22":["บมจ.ซีพี แอ็กซ์ตร้า สาขานครศรีธรรมราช 22","Zone17","Regional 4","คุณ พงศิกร รังษีพลาสวัสดิ์","Sainan Lirdariyapongkul"],"23":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเชียงราย 23","Zone1","Regional 1","คุณ พิชิต คันธาเวช","Suphanan Chanlaset"],"24":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสกลนคร 24","Zone3","Regional 1","คุณ มะลิวัลย์ โขงชัยภูมิ","Pannawich Pathomwattananurak"],"25":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสุพรรณบุรี 25","Zone5","Regional 1","คุณ ลัดดาวัลย์ ธรรมศร","Sirada Phruksatrakul"],"26":["บมจ.ซีพี แอ็กซ์ตร้า สาขาจันทบุรี 26","Zone14","Regional 3","คุณ รัตวัชร์ พงศ์วัจนาทิน","Wattarapoo Kanjana"],"27":["บมจ.ซีพี แอ็กซ์ตร้า สาขาภูเก็ต 27","Zone16","Regional 4","คุณ บุษรา ไชยเสน","Sanur Chamram"],"28":["บมจ.ซีพี แอ็กซ์ตร้า สาขาร้อยเอ็ด 28","Zone4","Regional 1","คุณ สุมาลี หาญสว่าง","Uraiwan Nisup"],"29":["บมจ.ซีพี แอ็กซ์ตร้า สาขาตรัง 29","Zone17","Regional 4","คุณ พงศิกร รังษีพลาสวัสดิ์","Sainan Lirdariyapongkul"],"30":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสระแก้ว 30","Zone12","Regional 3","คุณ พจนีย์ กลั่นเขตกิจ","Wattarapoo Kanjana"],"31":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเกาะสมุย 31","Zone17","Regional 4","คุณ พงศิกร รังษีพลาสวัสดิ์","Sanur Chamram"],"32":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบุรีรัมย์ 32","Zone11","Regional 3","คุณ ณัฐวัฒน์ เดชโนนสังข์","Kanda Prasert"],"33":["บมจ.ซีพี แอ็กซ์ตร้า สาขาศรีสะเกษ 33","Zone11","Regional 3","คุณ ณัฐวัฒน์ เดชโนนสังข์","Uraiwan Nisup"],"34":["บมจ.ซีพี แอ็กซ์ตร้า สาขาลำพูน 34","Zone1","Regional 1","คุณ พิชิต คันธาเวช","Suphanan Chanlaset"],"35":["บมจ.ซีพี แอ็กซ์ตร้า สาขากระบี่ 35","Zone16","Regional 4","คุณ บุษรา ไชยเสน","Sainan Lirdariyapongkul"],"36":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเพชรบุรี 36","Zone15","Regional 3","คุณ วรรณิภา บุญจริง","Thitiwat Yangyuenthiwat"],"37":["บมจ.ซีพี แอ็กซ์ตร้า สาขาชัยภูมิ 37","Zone4","Regional 1","คุณ สุมาลี หาญสว่าง","Kanda Prasert"],"38":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสระบุรี 38","Zone5","Regional 1","คุณ ลัดดาวัลย์ ธรรมศร","Sirada Phruksatrakul"],"39":["บมจ.ซีพี แอ็กซ์ตร้า สาขาปราณบุรี 39","Zone15","Regional 3","คุณ วรรณิภา บุญจริง","Thitiwat Yangyuenthiwat"],"40":["บมจ.ซีพี แอ็กซ์ตร้า สาขาฉะเชิงเทรา 40","Zone13","Regional 3","คุณ เสถียร ผลขาว","Wattarapoo Kanjana"],"41":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเชียงใหม่2 41","Zone1","Regional 1","คุณ พิชิต คันธาเวช","Suphanan Chanlaset"],"42":["บมจ.ซีพี แอ็กซ์ตร้า สาขารามอินทรา 42","Zone9","Regional 2","คุณ เอกธัช นาวิกบุตร","Tien-Hung Chou"],"43":["บมจ.ซีพี แอ็กซ์ตร้า สาขาชุมพร 43","Zone15","Regional 3","คุณ วรรณิภา บุญจริง","Sanur Chamram"],"44":["บมจ.ซีพี แอ็กซ์ตร้า สาขาพัทยา 44","Zone14","Regional 3","คุณ รัตวัชร์ พงศ์วัจนาทิน","Wattarapoo Kanjana"],"45":["บมจ.ซีพี แอ็กซ์ตร้า สาขากำแพงเพชร 45","Zone2","Regional 1","คุณ ธีระพงษ์ อินจุ้มสาย","Pongsiri Kamsaengdee"],"46":["บมจ.ซีพี แอ็กซ์ตร้า สาขากาญจนบุรี 46","Zone6","Regional 2","คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล","Thitiwat Yangyuenthiwat"],"47":["บมจ.ซีพี แอ็กซ์ตร้า สาขาลพบุรี 47","Zone5","Regional 1","คุณ ลัดดาวัลย์ ธรรมศร","Sirada Phruksatrakul"],"48":["บมจ.ซีพี แอ็กซ์ตร้า สาขาหนองคาย 48","Zone3","Regional 1","คุณ มะลิวัลย์ โขงชัยภูมิ","Pannawich Pathomwattananurak"],"49":["บมจ.ซีพี แอ็กซ์ตร้า สาขาราชบุรี 49","Zone6","Regional 2","คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล","Thitiwat Yangyuenthiwat"],"50":["บมจ.ซีพี แอ็กซ์ตร้า สาขาแม่ริม 50","Zone1","Regional 1","คุณ พิชิต คันธาเวช","Suphanan Chanlaset"],"51":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอยุธยา 51","Zone12","Regional 3","คุณ พจนีย์ กลั่นเขตกิจ","Sirada Phruksatrakul"],"52":["บมจ.ซีพี แอ็กซ์ตร้า สาขาลำปาง 52","Zone2","Regional 1","คุณ ธีระพงษ์ อินจุ้มสาย","Suphanan Chanlaset"],"53":["บมจ.ซีพี แอ็กซ์ตร้า สาขาหัวหิน 53","Zone15","Regional 3","คุณ วรรณิภา บุญจริง","Thitiwat Yangyuenthiwat"],"54":["บมจ.ซีพี แอ็กซ์ตร้า สาขาคลองหลวง 54","Zone12","Regional 3","คุณ พจนีย์ กลั่นเขตกิจ","Sirada Phruksatrakul"],"55":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเลย 55","Zone3","Regional 1","คุณ มะลิวัลย์ โขงชัยภูมิ","Pannawich Pathomwattananurak"],"56":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเพชรบูรณ์ 56","Zone5","Regional 1","คุณ ลัดดาวัลย์ ธรรมศร","Pongsiri Kamsaengdee"],"57":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบางพลี 57","Zone8","Regional 2","คุณ ศุจิกา พงษากาล","Tien-Hung Chou"],"58":["บมจ.ซีพี แอ็กซ์ตร้า สาขามุกดาหาร 58","Zone3","Regional 1","คุณ มะลิวัลย์ โขงชัยภูมิ","Uraiwan Nisup"],"59":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสตูล 59","Zone17","Regional 4","คุณ พงศิกร รังษีพลาสวัสดิ์","Sainan Lirdariyapongkul"],"60":["บมจ.ซีพี แอ็กซ์ตร้า สาขาตราด 60","Zone14","Regional 3","คุณ รัตวัชร์ พงศ์วัจนาทิน","Wattarapoo Kanjana"],"61":["บมจ.ซีพี แอ็กซ์ตร้า สาขาชุมแพ 61","Zone4","Regional 1","คุณ สุมาลี หาญสว่าง","Pannawich Pathomwattananurak"],"62":["บมจ.ซีพี แอ็กซ์ตร้า สาขาราไวย์ 62","Zone16","Regional 4","คุณ บุษรา ไชยเสน","Sanur Chamram"],"63":["บมจ.ซีพี แอ็กซ์ตร้า สาขานครพนม 63","Zone3","Regional 1","คุณ มะลิวัลย์ โขงชัยภูมิ","Pannawich Pathomwattananurak"],"64":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเกาะพะงัน 64","Zone17","Regional 4","คุณ พงศิกร รังษีพลาสวัสดิ์","Sanur Chamram"],"65":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบึงกาฬ 65","Zone3","Regional 1","คุณ มะลิวัลย์ โขงชัยภูมิ","Pannawich Pathomwattananurak"],"66":["บมจ.ซีพี แอ็กซ์ตร้า สาขาพัทยาเหนือ 66","Zone14","Regional 3","คุณ รัตวัชร์ พงศ์วัจนาทิน","Wattarapoo Kanjana"],"67":["บมจ.ซีพี แอ็กซ์ตร้า สาขาแม่สาย 67","Zone1","Regional 1","คุณ พิชิต คันธาเวช","Suphanan Chanlaset"],"68":["บมจ.ซีพี แอ็กซ์ตร้า สาขาศาลายา 68","Zone6","Regional 2","คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล","Thitiwat Yangyuenthiwat"],"69":["บมจ.ซีพี แอ็กซ์ตร้า สาขาพัทลุง 69","Zone16","Regional 4","คุณ บุษรา ไชยเสน","Sainan Lirdariyapongkul"],"70":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสุโขทัย 70","Zone2","Regional 1","คุณ ธีระพงษ์ อินจุ้มสาย","Pongsiri Kamsaengdee"],"71":["บมจ.ซีพี แอ็กซ์ตร้า สาขาป่าตอง 71","Zone16","Regional 4","คุณ บุษรา ไชยเสน","Sanur Chamram"],"72":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสมุทรสาคร 72","Zone6","Regional 2","คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล","Thitiwat Yangyuenthiwat"],"73":["บมจ.ซีพี แอ็กซ์ตร้า สาขาแม่สอด 73","Zone2","Regional 1","คุณ ธีระพงษ์ อินจุ้มสาย","Pongsiri Kamsaengdee"],"74":["บมจ.ซีพี แอ็กซ์ตร้า สาขาปากช่อง 74","Zone5","Regional 1","คุณ ลัดดาวัลย์ ธรรมศร","Kanda Prasert"],"75":["บมจ.ซีพี แอ็กซ์ตร้า สาขาถลาง 75","Zone16","Regional 4","คุณ บุษรา ไชยเสน","Sanur Chamram"],"76":["บมจ.ซีพี แอ็กซ์ตร้า สาขาระนอง 76","Zone15","Regional 3","คุณ วรรณิภา บุญจริง","Sanur Chamram"],"77":["บมจ.ซีพี แอ็กซ์ตร้า สาขาละไม 77","Zone17","Regional 4","คุณ พงศิกร รังษีพลาสวัสดิ์","Sanur Chamram"],"78":["บมจ.ซีพี แอ็กซ์ตร้า สาขากัลปพฤกษ์ 78","Zone8","Regional 2","คุณ ศุจิกา พงษากาล","Ornanong Sangfai"],"79":["บมจ.ซีพี แอ็กซ์ตร้า สาขายโสธร 79","Zone4","Regional 1","คุณ สุมาลี หาญสว่าง","Uraiwan Nisup"],"80":["บมจ.ซีพี แอ็กซ์ตร้า สาขามหาสารคาม 80","Zone4","Regional 1","คุณ สุมาลี หาญสว่าง","Kanda Prasert"],"81":["บมจ.ซีพี แอ็กซ์ตร้า สาขาฝาง 81","Zone1","Regional 1","คุณ พิชิต คันธาเวช","Suphanan Chanlaset"],"82":["บมจ.ซีพี แอ็กซ์ตร้า สาขานครนายก 82","Zone12","Regional 3","คุณ พจนีย์ กลั่นเขตกิจ","Wattarapoo Kanjana"],"83":["บมจ.ซีพี แอ็กซ์ตร้า สาขานครอินทร์ 83","Zone7","Regional 2","คุณ ธนกร วุฒิเดชเกรียงไกร","Thitikarn Poolsawasd"],"84":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบ้านเพ 84","Zone14","Regional 3","คุณ รัตวัชร์ พงศ์วัจนาทิน","Wattarapoo Kanjana"],"85":["บมจ.ซีพี แอ็กซ์ตร้า สาขาทุ่งสง 85","Zone17","Regional 4","คุณ พงศิกร รังษีพลาสวัสดิ์","Sainan Lirdariyapongkul"],"86":["บมจ.ซีพี แอ็กซ์ตร้า สาขาศรีนครินทร์2 86","Zone10","Regional 2","คุณ อารีย์ นิ่มกลาง","Tien-Hung Chou"],"87":["บมจ.ซีพี แอ็กซ์ตร้า สาขาพะเยา 87","Zone1","Regional 1","คุณ พิชิต คันธาเวช","Suphanan Chanlaset"],"89":["บมจ.ซีพี แอ็กซ์ตร้า สาขาพิษณุโลก2 89","Zone2","Regional 1","คุณ ธีระพงษ์ อินจุ้มสาย","Pongsiri Kamsaengdee"],"96":["บมจ.ซีพี แอ็กซ์ตร้า สาขาทาวน์อินทาวน์ 96","Zone10","Regional 2","คุณ อารีย์ นิ่มกลาง","Tien-Hung Chou"],"100":["บมจ.ซีพี แอ็กซ์ตร้า สาขาแพร่ 100","Zone2","Regional 1","คุณ ธีระพงษ์ อินจุ้มสาย","Suphanan Chanlaset"],"101":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเกาะช้าง 101","Zone14","Regional 3","คุณ รัตวัชร์ พงศ์วัจนาทิน","Wattarapoo Kanjana"],"102":["บมจ.ซีพี แอ็กซ์ตร้า สาขานครราชสีมา2 102","Zone11","Regional 3","คุณ ณัฐวัฒน์ เดชโนนสังข์","Kanda Prasert"],"103":["บมจ.ซีพี แอ็กซ์ตร้า สาขาน่าน 103","Zone2","Regional 1","คุณ ธีระพงษ์ อินจุ้มสาย","Suphanan Chanlaset"],"104":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอ่าวนาง 104","Zone16","Regional 4","คุณ บุษรา ไชยเสน","Sainan Lirdariyapongkul"],"105":["บมจ.ซีพี แอ็กซ์ตร้า สาขากะรน 105","Zone16","Regional 4","คุณ บุษรา ไชยเสน","Sanur Chamram"],"106":["บมจ.ซีพี แอ็กซ์ตร้า สาขาวารินชำราบ 106","Zone11","Regional 3","คุณ ณัฐวัฒน์ เดชโนนสังข์","Uraiwan Nisup"],"107":["บมจ.ซีพี แอ็กซ์ตร้า สาขาหนองบัวลำภู 107","Zone3","Regional 1","คุณ มะลิวัลย์ โขงชัยภูมิ","Pannawich Pathomwattananurak"],"108":["บมจ.ซีพี แอ็กซ์ตร้า สาขาหนองจอก 108","Zone13","Regional 3","คุณ เสถียร ผลขาว","Tien-Hung Chou"],"109":["บมจ.ซีพี แอ็กซ์ตร้า สาขาแหลมฉบัง 109","Zone13","Regional 3","คุณ เสถียร ผลขาว","Wattarapoo Kanjana"],"110":["บมจ.ซีพี แอ็กซ์ตร้า สาขาประจวบคีรีขันธ์ 110","Zone15","Regional 3","คุณ วรรณิภา บุญจริง","Thitiwat Yangyuenthiwat"],"111":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเพชรเกษม 111","Zone6","Regional 2","คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล","Ornanong Sangfai"],"112":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบางปู 112","Zone8","Regional 2","คุณ ศุจิกา พงษากาล",""],"113":["บมจ.ซีพี แอ็กซ์ตร้า สาขาวังหิน 113","Zone9","Regional 2","คุณ เอกธัช นาวิกบุตร","Tien-Hung Chou"],"114":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสิงห์บุรี 114","Zone5","Regional 1","คุณ ลัดดาวัลย์ ธรรมศร","Sirada Phruksatrakul"],"115":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบางบัวทอง 115","Zone7","Regional 2","คุณ ธนกร วุฒิเดชเกรียงไกร","Thitikarn Poolsawasd"],"116":["บมจ.ซีพี แอ็กซ์ตร้า สาขากาฬสินธุ์ 116","Zone4","Regional 1","คุณ สุมาลี หาญสว่าง","Uraiwan Nisup"],"117":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอุดมสุข 117","Zone10","Regional 2","คุณ อารีย์ นิ่มกลาง","Tien-Hung Chou"],"118":["บมจ.ซีพี แอ็กซ์ตร้า สาขารามคำแหง(สัมมากร) 118","Zone9","Regional 2","คุณ เอกธัช นาวิกบุตร","Tien-Hung Chou"],"119":["บมจ.ซีพี แอ็กซ์ตร้า สาขาพิจิตร 119","Zone5","Regional 1","คุณ ลัดดาวัลย์ ธรรมศร","Pongsiri Kamsaengdee"],"120":["บมจ.ซีพี แอ็กซ์ตร้า สาขาปทุมธานี 120","Zone7","Regional 2","คุณ ธนกร วุฒิเดชเกรียงไกร","Sirada Phruksatrakul"],"121":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบดินทรเดชา 121","Zone9","Regional 2","คุณ เอกธัช นาวิกบุตร","Thitikarn Poolsawasd"],"122":["บมจ.ซีพี แอ็กซ์ตร้า สาขาประชาอุทิศ 122","Zone8","Regional 2","คุณ ศุจิกา พงษากาล","Ornanong Sangfai"],"123":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสุขุมวิท71 123","Zone8","Regional 2","คุณ ศุจิกา พงษากาล","Tien-Hung Chou"],"124":["บมจ.ซีพี แอ็กซ์ตร้า สาขานวมินทร์70 124","Zone9","Regional 2","คุณ เอกธัช นาวิกบุตร","Tien-Hung Chou"],"125":["บมจ.ซีพี แอ็กซ์ตร้า สาขาชะอำ 125","Zone15","Regional 3","คุณ วรรณิภา บุญจริง","Thitiwat Yangyuenthiwat"],"126":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอ่อนนุช 126","Zone10","Regional 2","คุณ อารีย์ นิ่มกลาง","Tien-Hung Chou"],"127":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสุขสวัสดิ์ 127","Zone8","Regional 2","คุณ ศุจิกา พงษากาล","Ornanong Sangfai"],"128":["บมจ.ซีพี แอ็กซ์ตร้า สาขากบินทร์บุรี 128","Zone12","Regional 3","คุณ พจนีย์ กลั่นเขตกิจ","Wattarapoo Kanjana"],"129":["บมจ.ซีพี แอ็กซ์ตร้า สาขาลาดกระบัง 129","Zone13","Regional 3","คุณ เสถียร ผลขาว","Tien-Hung Chou"],"130":["บมจ.ซีพี แอ็กซ์ตร้า สาขานาทองเจริญ 130","Zone12","Regional 3","คุณ พจนีย์ กลั่นเขตกิจ","Sirada Phruksatrakul"],"131":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบ่อวิน 131","Zone14","Regional 3","คุณ รัตวัชร์ พงศ์วัจนาทิน","Wattarapoo Kanjana"],"132":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสัตหีบ 132","Zone14","Regional 3","คุณ รัตวัชร์ พงศ์วัจนาทิน","Wattarapoo Kanjana"],"133":["บมจ.ซีพี แอ็กซ์ตร้า สาขารามคำแหง24 133","Zone10","Regional 2","คุณ อารีย์ นิ่มกลาง","Tien-Hung Chou"],"134":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอมตะนคร 134","Zone13","Regional 3","คุณ เสถียร ผลขาว","Wattarapoo Kanjana"],"135":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบางคอแหลม 135","Zone8","Regional 2","คุณ ศุจิกา พงษากาล","Ornanong Sangfai"],"136":["บมจ.ซีพี แอ็กซ์ตร้า สาขาขอนแก่น2 136","Zone4","Regional 1","คุณ สุมาลี หาญสว่าง","Pannawich Pathomwattananurak"],"137":["บมจ.ซีพี แอ็กซ์ตร้า สาขาวงศกร2 137","Zone10","Regional 2","คุณ อารีย์ นิ่มกลาง","Tien-Hung Chou"],"138":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเหม่งจ๋าย 138","Zone10","Regional 2","คุณ อารีย์ นิ่มกลาง","Thitikarn Poolsawasd"],"139":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสุขุมวิท22 139","Zone10","Regional 2","คุณ อารีย์ นิ่มกลาง","Tien-Hung Chou"],"140":["บมจ.ซีพี แอ็กซ์ตร้า สาขาถนนจันทน์ 140","Zone7","Regional 2","คุณ ธนกร วุฒิเดชเกรียงไกร","Tien-Hung Chou"],"141":["บมจ.ซีพี แอ็กซ์ตร้า สาขาลำลูกกา 141","Zone12","Regional 3","คุณ พจนีย์ กลั่นเขตกิจ","Sirada Phruksatrakul"],"142":["บมจ.ซีพี แอ็กซ์ตร้า สาขาแพรกษา 142","Zone8","Regional 2","คุณ ศุจิกา พงษากาล","Tien-Hung Chou"],"143":["บมจ.ซีพี แอ็กซ์ตร้า สาขาประดิษฐ์มนูธรรม 143","Zone9","Regional 2","คุณ เอกธัช นาวิกบุตร","Tien-Hung Chou"],"144":["บมจ.ซีพี แอ็กซ์ตร้า สาขาตลาดรุ่งโรจน์(คลอง4) 144","Zone12","Regional 3","คุณ พจนีย์ กลั่นเขตกิจ","Sirada Phruksatrakul"],"145":["บมจ.ซีพี แอ็กซ์ตร้า สาขาพงษ์เพชร 145","Zone7","Regional 2","คุณ ธนกร วุฒิเดชเกรียงไกร","Ornanong Sangfai"],"146":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอุตรดิตถ์ 146","Zone2","Regional 1","คุณ ธีระพงษ์ อินจุ้มสาย","Pongsiri Kamsaengdee"],"147":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเมืองทอง 147","Zone9","Regional 2","คุณ เอกธัช นาวิกบุตร","Thitikarn Poolsawasd"],"148":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเลียบคลอง2 148","Zone13","Regional 3","คุณ เสถียร ผลขาว","Tien-Hung Chou"],"149":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอ้อมน้อย 149","Zone6","Regional 2","คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล","Thitiwat Yangyuenthiwat"],"150":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสนามบินน้ำ 150","Zone7","Regional 2","คุณ ธนกร วุฒิเดชเกรียงไกร","Thitikarn Poolsawasd"],"151":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเทพรักษ์ 151","Zone9","Regional 2","คุณ เอกธัช นาวิกบุตร","Tien-Hung Chou"],"152":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสมุทรสงคราม 152","Zone6","Regional 2","คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล","Thitiwat Yangyuenthiwat"],"153":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเวียงสระ 153","Zone17","Regional 4","คุณ พงศิกร รังษีพลาสวัสดิ์","Sanur Chamram"],"154":["บมจ.ซีพี แอ็กซ์ตร้า สาขาปราจีนบุรี 154","Zone12","Regional 3","คุณ พจนีย์ กลั่นเขตกิจ","Wattarapoo Kanjana"],"155":["บมจ.ซีพี แอ็กซ์ตร้า สาขาปิ่นเกล้า 155","Zone7","Regional 2","คุณ ธนกร วุฒิเดชเกรียงไกร","Ornanong Sangfai"],"156":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสมุทรปราการ 156","Zone8","Regional 2","คุณ ศุจิกา พงษากาล","Tien-Hung Chou"],"157":["บมจ.ซีพี แอ็กซ์ตร้า สาขานครราชสีมา3 (เซฟวัน) 157","Zone11","Regional 3","คุณ ณัฐวัฒน์ เดชโนนสังข์","Kanda Prasert"],"158":["บมจ.ซีพี แอ็กซ์ตร้า สาขานครสวรรค์ 2 (พรหมนิมิต) 158","Zone5","Regional 1","คุณ ลัดดาวัลย์ ธรรมศร","Pongsiri Kamsaengdee"],"159":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอุดรธานี 2 (บ้านเลื่อม) 159","Zone3","Regional 1","คุณ มะลิวัลย์ โขงชัยภูมิ","Pannawich Pathomwattananurak"],"160":["บมจ.ซีพี แอ็กซ์ตร้า สาขามหาชัย 160","Zone6","Regional 2","คุณ ภกรณ์กาญจ์ เมทินีพิศาลกุล","Thitiwat Yangyuenthiwat"],"161":["บมจ.ซีพี แอ็กซ์ตร้า สาขาขอนแก่น3 (บ้านโนนม่วง) 161","Zone4","Regional 1","คุณ สุมาลี หาญสว่าง","Pannawich Pathomwattananurak"],"162":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอมตะนคร 2 162","Zone13","Regional 3","คุณ เสถียร ผลขาว","Wattarapoo Kanjana"],"163":["บมจ.ซีพี แอ็กซ์ตร้า สาขาสงขลา 163","Zone17","Regional 4","คุณ พงศิกร รังษีพลาสวัสดิ์","Sainan Lirdariyapongkul"],"164":["บมจ.ซีพี แอ็กซ์ตร้า สาขาชัยนาท 164","Zone5","Regional 1","คุณ ลัดดาวัลย์ ธรรมศร","Sirada Phruksatrakul"],"165":["บมจ.ซีพี แอ็กซ์ตร้า สาขาถนนศรีอยุธยา 165","Zone10","Regional 2","คุณ อารีย์ นิ่มกลาง","Thitikarn Poolsawasd"],"166":["บมจ.ซีพี แอ็กซ์ตร้า สาขาราไวย์ 2 166","Zone16","Regional 4","คุณ บุษรา ไชยเสน","Sanur Chamram"],"167":["บมจ.ซีพี แอ็กซ์ตร้า สาขาเชียงใหม่ (จอมทอง) 167","Zone1","Regional 1","คุณ พิชิต คันธาเวช","Suphanan Chanlaset"],"168":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบ้านบึง (ชลบุรี) 168","Zone13","Regional 3","คุณ เสถียร ผลขาว","Wattarapoo Kanjana"],"169":["บมจ.ซีพี แอ็กซ์ตร้า สาขาพังงา 169","Zone15","Regional 3","คุณ วรรณิภา บุญจริง","Sanur Chamram"],"170":["บมจ.ซีพี แอ็กซ์ตร้า สาขาอำนาจเจริญ 170","Zone11","Regional 3","คุณ ณัฐวัฒน์ เดชโนนสังข์","Uraiwan Nisup"],"171":["บมจ.ซีพี แอ็กซ์ตร้า สาขาจอหอ (นครราชสีมา) 171","Zone11","Regional 3","คุณ ณัฐวัฒน์ เดชโนนสังข์","Kanda Prasert"],"172":["บมจ.ซีพี แอ็กซ์ตร้า สาขาบ้านไผ่ 172","Zone4","Regional 1","คุณ สุมาลี หาญสว่าง","Pannawich Pathomwattananurak"],"175":["บมจ.ซีพี แอ็กซ์ตร้า สาขาแฮปปี้แทท (ฟอเรสเทียส์ - บางนา) 175","Zone8","Regional 2","คุณ ศุจิกา พงษากาล","Tien-Hung Chou"],"301":["บมจ.ซีพี แอ็กซ์ตร้า สาขาพระราม4 301","Zone7","Regional 2","คุณ ธนกร วุฒิเดชเกรียงไกร","Ornanong Sangfai"],"303":["บมจ.ซีพี แอ็กซ์ตร้า สาขาศิริมังคลาจารย์ 303","Zone1","Regional 1","คุณ พิชิต คันธาเวช","Suphanan Chanlaset"]};
 
-function getStoreInfo(s){return STORE_DB[String(s)]||null;}
+function getStoreInfo(s) { return STORE_DB[String(s)] || null; }
 
-function onStoreChange(val){
-  var info=getStoreInfo(val.trim());
-  var banner=document.getElementById('siBanner');
-  if(info){
-    banner.innerHTML='<strong>📍 '+info[0]+'</strong> &nbsp;|&nbsp; <span class="sp zone">'+info[1]+'</span> <span class="sp reg">'+info[2]+'</span> <span class="sp sm">SM: '+info[3]+'</span> <span class="sp am">AM: '+info[4]+'</span>';
+function onStoreChange(val) {
+  val = val.trim();
+  var info = getStoreInfo(val);
+  var banner = document.getElementById('siBanner');
+  if (!banner) return;
+  if (info) {
+    banner.innerHTML = '<strong>📍 ' + info[0] + '</strong> &nbsp;|&nbsp;'
+      + ' <span class="sp zone">' + info[1] + '</span>'
+      + ' <span class="sp reg">'  + info[2] + '</span>'
+      + ' <span class="sp sm">SM: ' + info[3] + '</span>'
+      + ' <span class="sp am">AM: ' + info[4] + '</span>';
     banner.classList.add('show');
-  } else { banner.classList.remove('show'); }
+  } else {
+    banner.classList.remove('show');
+  }
 }
 
-function onItemInput(val){
-  val=val.trim();
-  var res=document.getElementById('lkRes');
-  var fd=document.getElementById('fDesc');
-  var fdp=document.getElementById('fDept');
-  if(!val){res.classList.remove('show');fd.value='';fdp.value='';fd.removeAttribute('readonly');return;}
-  if(!itemDbReady){
-    loadItemDB(function(){onItemInput(document.getElementById('fItem').value);});
-    res.innerHTML='<span style="color:var(--tm)">⏳ กำลังโหลด DB...</span>';res.classList.add('show');return;
+// ===== ITEM DB (Lazy load) =====
+var ITEM_DB = null;
+var _itemDbReady = false;
+
+function loadItemDB(cb) {
+  if (_itemDbReady) { if (cb) cb(); return; }
+  var ov  = document.getElementById('ldOverlay');
+  var msg = document.getElementById('ldMsg');
+  if (msg) msg.textContent = 'กำลังโหลดฐานข้อมูลสินค้า 135,111 รายการ...';
+  if (ov) ov.classList.add('show');
+  var s = document.createElement('script');
+  s.src = 'aging_items.js';
+  s.onload = function() {
+    if (typeof window.ITEM_DB !== 'undefined') ITEM_DB = window.ITEM_DB;
+    _itemDbReady = true;
+    if (ov) ov.classList.remove('show');
+    if (cb) cb();
+  };
+  s.onerror = function() {
+    _itemDbReady = true;
+    if (ov) ov.classList.remove('show');
+    if (cb) cb();
+  };
+  document.head.appendChild(s);
+}
+
+function onItemInput(val) {
+  val = val ? val.trim() : '';
+  var res = document.getElementById('lkRes');
+  var fd  = document.getElementById('fDesc');
+  var fdp = document.getElementById('fDept');
+  if (!val) {
+    if (res) res.classList.remove('show');
+    if (fd)  { fd.value = ''; fd.removeAttribute('readonly'); }
+    if (fdp) fdp.value = '';
+    return;
   }
-  if(ITEM_DB&&ITEM_DB[val]){
-    var parts=ITEM_DB[val].split('|');
-    fd.value=parts.slice(1).join('|')||'';fdp.value=parts[0]||'';
-    fd.setAttribute('readonly','');
-    res.innerHTML='<span class="dl">'+fd.value+'</span> <small style="color:var(--tm)">Dept '+fdp.value+'</small>';
-    res.classList.add('show');
+  if (!_itemDbReady) {
+    if (res) { res.innerHTML='<span style="color:var(--tm)">⏳ กำลังโหลด DB...</span>'; res.classList.add('show'); }
+    loadItemDB(function(){ onItemInput(document.getElementById('fItem').value); });
+    return;
+  }
+  if (ITEM_DB && ITEM_DB[val]) {
+    var parts = ITEM_DB[val].split('|');
+    var dept  = parts[0] || '';
+    var desc  = parts.slice(1).join('|') || '';
+    if (fd)  { fd.value = desc; fd.setAttribute('readonly',''); }
+    if (fdp) fdp.value = dept;
+    if (res) {
+      res.innerHTML = '<span class="dl">' + desc + '</span> <small style="color:var(--tm)">Dept ' + dept + '</small>';
+      res.classList.add('show');
+    }
   } else {
-    fd.value='';fdp.value='';fd.removeAttribute('readonly');
-    res.innerHTML='<span style="color:var(--tm)">⚠ ไม่พบ — กรอกเองได้</span>';res.classList.add('show');
+    if (fd)  { fd.value = ''; fd.removeAttribute('readonly'); }
+    if (fdp) fdp.value = '';
+    if (res) {
+      res.innerHTML = '<span style="color:var(--tm)">⚠ ไม่พบ — กรอกเองได้</span>';
+      res.classList.add('show');
+    }
   }
 }
 
 // ===== INIT APP =====
-function initApp(){
+function initApp() {
   populateStoreDatalists();
   populateFilterDropdowns();
-  startFbListener();
+  connectFirebase();  // async - won't block UI
 }
 
-function populateStoreDatalists(){
-  var dl=document.getElementById('storeList');
-  dl.innerHTML=Object.keys(STORE_DB).sort(function(a,b){return +a-+b;}).map(function(k){return '<option value="'+k+'" label="'+STORE_DB[k][0]+'">';}).join('');
+function populateStoreDatalists() {
+  var dl = document.getElementById('storeList');
+  if (!dl) return;
+  dl.innerHTML = Object.keys(STORE_DB).sort(function(a,b){return +a-+b;})
+    .map(function(k){ return '<option value="'+k+'" label="'+STORE_DB[k][0]+'">'; }).join('');
 }
 
-function populateFilterDropdowns(){
-  var zones=[...new Set(Object.values(STORE_DB).map(function(v){return v[1];}))].sort();
-  var sms=[...new Set(Object.values(STORE_DB).map(function(v){return v[3];}).filter(Boolean))].sort();
-  var ams=[...new Set(Object.values(STORE_DB).map(function(v){return v[4];}).filter(Boolean))].sort();
+function populateFilterDropdowns() {
+  var vals = Object.values(STORE_DB);
+  var zones = [...new Set(vals.map(function(v){return v[1];}))].sort();
+  var sms   = [...new Set(vals.map(function(v){return v[3];}).filter(Boolean))].sort();
+  var ams   = [...new Set(vals.map(function(v){return v[4];}).filter(Boolean))].sort();
   ['filt_zone','df_zone'].forEach(function(id){
-    var el=document.getElementById(id);
-    el.innerHTML='<option value="">ทั้งหมด</option>'+zones.map(function(z){return '<option>'+z+'</option>';}).join('');
+    var el=document.getElementById(id); if(!el)return;
+    el.innerHTML='<option value="">ทั้งหมด</option>'+zones.map(function(z){return'<option>'+z+'</option>';}).join('');
   });
   ['filt_sm','df_sm'].forEach(function(id){
-    var el=document.getElementById(id);
-    el.innerHTML='<option value="">ทั้งหมด</option>'+sms.map(function(s){return '<option>'+s+'</option>';}).join('');
+    var el=document.getElementById(id); if(!el)return;
+    el.innerHTML='<option value="">ทั้งหมด</option>'+sms.map(function(s){return'<option>'+s+'</option>';}).join('');
   });
   ['filt_am','df_am'].forEach(function(id){
-    var el=document.getElementById(id);
-    el.innerHTML='<option value="">ทั้งหมด</option>'+ams.map(function(a){return '<option>'+a+'</option>';}).join('');
+    var el=document.getElementById(id); if(!el)return;
+    el.innerHTML='<option value="">ทั้งหมด</option>'+ams.map(function(a){return'<option>'+a+'</option>';}).join('');
   });
 }
 
-function onFiltRegChange(){
-  var reg=document.getElementById('filt_reg').value;
-  var zones=reg?[...new Set(Object.values(STORE_DB).filter(function(v){return v[2]===reg;}).map(function(v){return v[1];}))].sort()
-              :[...new Set(Object.values(STORE_DB).map(function(v){return v[1];}))].sort();
-  document.getElementById('filt_zone').innerHTML='<option value="">ทั้งหมด</option>'+zones.map(function(z){return '<option>'+z+'</option>';}).join('');
+function onFiltRegChange() {
+  var reg = document.getElementById('filt_reg').value;
+  var vals = Object.values(STORE_DB);
+  var zones = reg
+    ? [...new Set(vals.filter(function(v){return v[2]===reg;}).map(function(v){return v[1];}))].sort()
+    : [...new Set(vals.map(function(v){return v[1];}))].sort();
+  var el = document.getElementById('filt_zone');
+  el.innerHTML = '<option value="">ทั้งหมด</option>' + zones.map(function(z){return'<option>'+z+'</option>';}).join('');
 }
-function onDashRegChange(){
-  var reg=document.getElementById('df_reg').value;
-  var zones=reg?[...new Set(Object.values(STORE_DB).filter(function(v){return v[2]===reg;}).map(function(v){return v[1];}))].sort()
-              :[...new Set(Object.values(STORE_DB).map(function(v){return v[1];}))].sort();
-  document.getElementById('df_zone').innerHTML='<option value="">ทั้งหมด</option>'+zones.map(function(z){return '<option>'+z+'</option>';}).join('');
+function onDashRegChange() {
+  var reg = document.getElementById('df_reg').value;
+  var vals = Object.values(STORE_DB);
+  var zones = reg
+    ? [...new Set(vals.filter(function(v){return v[2]===reg;}).map(function(v){return v[1];}))].sort()
+    : [...new Set(vals.map(function(v){return v[1];}))].sort();
+  var el = document.getElementById('df_zone');
+  el.innerHTML = '<option value="">ทั้งหมด</option>' + zones.map(function(z){return'<option>'+z+'</option>';}).join('');
 }
 
 // ===== NAV =====
-function showPg(name,btn){
-  document.querySelectorAll('.pg').forEach(function(p){p.classList.remove('active');});
-  document.querySelectorAll('.nt').forEach(function(b){b.classList.remove('active');});
-  document.getElementById('pg-'+name).classList.add('active');
+function showPg(name, btn) {
+  document.querySelectorAll('.pg').forEach(function(p){ p.classList.remove('active'); });
+  document.querySelectorAll('.nt').forEach(function(b){ b.classList.remove('active'); });
+  document.getElementById('pg-' + name).classList.add('active');
   btn.classList.add('active');
-  if(name==='all')renderAll();
-  if(name==='dash')renderDash();
+  if (name === 'all')  renderAll();
+  if (name === 'dash') renderDash();
 }
 
 // ===== FORM =====
-function calcDiff(){
-  var c=parseFloat(document.getElementById('fCom').value)||0;
-  var n=parseFloat(document.getElementById('fCnt').value)||0;
-  var d=n-c;
-  var el=document.getElementById('fDiff');
-  el.value=d===0?'0':(d>0?'+'+d:String(d));
-  el.className='fd '+(d<0?'dn2':d>0?'dp2':'dz2');
+function calcDiff() {
+  var c = parseFloat(document.getElementById('fCom').value)  || 0;
+  var n = parseFloat(document.getElementById('fCnt').value)  || 0;
+  var d = n - c;
+  var el = document.getElementById('fDiff');
+  el.value     = d === 0 ? '0' : (d > 0 ? '+' + d : String(d));
+  el.className = 'fd ' + (d < 0 ? 'dn2' : d > 0 ? 'dp2' : 'dz2');
 }
 
-var ynS={display:'',price:'',cond:''};
-function setYN(key,val,btn){
-  ynS[key]=val;
-  document.getElementById(key==='display'?'fDisp':key==='price'?'fPrYN':'fCond').value=val;
-  btn.closest('.yb2').querySelectorAll('.yb3').forEach(function(b){b.classList.remove('active');});
+var ynS = { display:'', price:'', cond:'' };
+function setYN(key, val, btn) {
+  ynS[key] = val;
+  var hidId = key==='display' ? 'fDisp' : key==='price' ? 'fPrYN' : 'fCond';
+  document.getElementById(hidId).value = val;
+  btn.closest('.yb2').querySelectorAll('.yb3').forEach(function(b){ b.classList.remove('active'); });
   btn.classList.add('active');
-  var w=document.getElementById(key==='display'?'rmDisp':key==='price'?'rmPrice':'rmCond');
-  if(val==='no'){w.classList.add('visible');w.querySelector('input').focus();}
-  else{w.classList.remove('visible');w.querySelector('input').value='';}
+  var wrapId = key==='display' ? 'rmDisp' : key==='price' ? 'rmPrice' : 'rmCond';
+  var wrap = document.getElementById(wrapId);
+  if (val === 'no') { wrap.classList.add('visible'); wrap.querySelector('input').focus(); }
+  else              { wrap.classList.remove('visible'); wrap.querySelector('input').value = ''; }
 }
 
-function addRow(){
-  var item=document.getElementById('fItem').value.trim();
-  var price=document.getElementById('fPrice').value.trim();
-  if(!item){showToast('กรุณากรอก Item No',true);document.getElementById('fItem').focus();return;}
-  if(!price){showToast('กรุณากรอก Selling Price',true);document.getElementById('fPrice').focus();return;}
-  var com=parseFloat(document.getElementById('fCom').value)||0;
-  var cnt=parseFloat(document.getElementById('fCnt').value)||0;
-  var store=document.getElementById('mStore').value.trim();
-  var si=getStoreInfo(store);
-  var r={
-    id:Date.now()+'_'+Math.random().toString(36).slice(2,6),
-    store:store,date:document.getElementById('mDate').value,
-    auditor:document.getElementById('mAud').value,
-    dept:document.getElementById('fDept').value.trim(),
-    itemno:item,
-    desc:document.getElementById('fDesc').value.trim()||'-',
-    price:parseFloat(price)||0,
-    aging:document.getElementById('fAging').value.trim(),
-    com:com,count:cnt,diff:cnt-com,
-    display:ynS.display,rmDisplay:document.getElementById('rmDispT').value.trim(),
-    priceyn:ynS.price,rmPrice:document.getElementById('rmPriceT').value.trim(),
-    cond:ynS.cond,rmCond:document.getElementById('rmCondT').value.trim(),
-    storeName:si?si[0]:'',zone:si?si[1]:'',regional:si?si[2]:'',sm:si?si[3]:'',am:si?si[4]:''
+function addRow() {
+  var item  = document.getElementById('fItem').value.trim();
+  var price = document.getElementById('fPrice').value.trim();
+  if (!item)  { showToast('กรุณากรอก Item No', true);        document.getElementById('fItem').focus();  return; }
+  if (!price) { showToast('กรุณากรอก Selling Price', true);  document.getElementById('fPrice').focus(); return; }
+  var com   = parseFloat(document.getElementById('fCom').value)  || 0;
+  var cnt   = parseFloat(document.getElementById('fCnt').value)  || 0;
+  var store = document.getElementById('mStore').value.trim();
+  var si    = getStoreInfo(store);
+  var row = {
+    id:        Date.now() + '_' + Math.random().toString(36).slice(2,6),
+    store:     store,
+    date:      document.getElementById('mDate').value,
+    auditor:   document.getElementById('mAud').value,
+    dept:      document.getElementById('fDept').value.trim(),
+    itemno:    item,
+    desc:      document.getElementById('fDesc').value.trim() || '-',
+    price:     parseFloat(price) || 0,
+    aging:     document.getElementById('fAging').value.trim(),
+    com:       com,  count: cnt,  diff: cnt - com,
+    display:   ynS.display,   rmDisplay: document.getElementById('rmDispT').value.trim(),
+    priceyn:   ynS.price,     rmPrice:   document.getElementById('rmPriceT').value.trim(),
+    cond:      ynS.cond,      rmCond:    document.getElementById('rmCondT').value.trim(),
+    storeName: si ? si[0] : '', zone:     si ? si[1] : '',
+    regional:  si ? si[2] : '', sm:       si ? si[3] : '', am: si ? si[4] : ''
   };
-  fbAdd(r,function(fbKey){
-    sessionIds.add(r.id);
+  fbAdd(row, function() {
+    sessionIds.add(row.id);
     resetForm();
     showToast('✓ เพิ่มรายการสำเร็จ');
   });
 }
 
-function resetForm(){
-  ['fItem','fDept','fDesc','fPrice','fAging','fCom','fCnt','fDiff','fDisp','fPrYN','fCond','rmDispT','rmPriceT','rmCondT'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
-  document.getElementById('lkRes').classList.remove('show');
-  document.getElementById('fDesc').removeAttribute('readonly');
-  document.getElementById('fDiff').className='fd';
-  document.querySelectorAll('#pg-chk .yb3').forEach(function(b){b.classList.remove('active');});
-  document.querySelectorAll('#pg-chk .rf').forEach(function(w){w.classList.remove('visible');});
-  ynS={display:'',price:'',cond:''};
-  document.getElementById('fItem').focus();
+function resetForm() {
+  ['fItem','fDept','fDesc','fPrice','fAging','fCom','fCnt','fDiff',
+   'fDisp','fPrYN','fCond','rmDispT','rmPriceT','rmCondT'].forEach(function(id){
+    var el=document.getElementById(id); if(el) el.value='';
+  });
+  var lr = document.getElementById('lkRes'); if(lr) lr.classList.remove('show');
+  var fd = document.getElementById('fDesc'); if(fd) fd.removeAttribute('readonly');
+  var dd = document.getElementById('fDiff'); if(dd) dd.className = 'fd';
+  document.querySelectorAll('#pg-chk .yb3').forEach(function(b){ b.classList.remove('active'); });
+  document.querySelectorAll('#pg-chk .rf').forEach(function(w){ w.classList.remove('visible'); });
+  ynS = { display:'', price:'', cond:'' };
+  var fi = document.getElementById('fItem'); if(fi) fi.focus();
 }
 
 // ===== RENDER HELPERS =====
-function yn(v){return v==='yes'?'<span class="bdg by">YES</span>':v==='no'?'<span class="bdg bn">NO</span>':'<span style="color:var(--tm);font-size:10px">-</span>';}
-function rm(v){return v?'<span class="rmc">⚠ '+v+'</span>':'<span style="color:var(--tm);font-size:10px">-</span>';}
-function agBdg(a){if(!a)return'-';var u=a.toUpperCase();return'<span class="bdg '+(u==='FP'?'bfp2':'bag2')+'">'+a+'</span>';}
-function diffCell(d){var t=d===0?'0':(d>0?'+'+d:String(d));var c=d<0?'dn4':d>0?'dp4':'dz4';return'<span class="'+c+'">'+t+'</span>';}
+function yn(v){
+  return v==='yes' ? '<span class="bdg by">YES</span>'
+       : v==='no'  ? '<span class="bdg bn">NO</span>'
+       : '<span style="color:var(--tm);font-size:10px">-</span>';
+}
+function rm(v){ return v ? '<span class="rmc">⚠ '+v+'</span>' : '<span style="color:var(--tm);font-size:10px">-</span>'; }
+function agBdg(a){
+  if(!a) return '-';
+  return '<span class="bdg '+(a.toUpperCase()==='FP'?'bfp2':'bag2')+'">'+a+'</span>';
+}
+function diffCell(d){
+  var t = d===0?'0':(d>0?'+'+d:String(d));
+  var c = d<0?'dn4':d>0?'dp4':'dz4';
+  return '<span class="'+c+'">'+t+'</span>';
+}
 function rowActs(r){
-  var ce=CU&&(CU.role==='admin'||CU.role==='soa');
-  var cd=CU&&CU.role==='admin';
-  var b='';
-  if(ce)b+='<button class="bed" onclick="openEdit(''+r.fbKey+'')">✏</button>';
-  if(cd)b+='<button class="be" onclick="delRow(''+r.fbKey+'')">✕</button>';
-  return b||'-';
+  var canEdit = CU && (CU.role==='admin' || CU.role==='soa');
+  var canDel  = CU && CU.role==='admin';
+  var b = '';
+  if (canEdit) b += '<button class="bed" onclick="openEdit(''+r.fbKey+'')">✏</button>';
+  if (canDel)  b += '<button class="be"  onclick="delRow(''+r.fbKey+'')">✕</button>';
+  return b || '-';
 }
 
 // ===== MY TABLE =====
 function renderMy(){
-  var tb=document.getElementById('myTblB');
-  var my=allRows.filter(function(r){return sessionIds.has(r.id);});
-  document.getElementById('myCnt').textContent=my.length;
-  if(!my.length){tb.innerHTML='<tr><td colspan="17"><div class="es"><div class="ei">📦</div><div>ยังไม่มีรายการใน Session นี้</div></div></td></tr>';return;}
-  tb.innerHTML=my.map(function(r,i){return '<tr>'+
-    '<td>'+(i+1)+'</td>'+
-    '<td class="mn2" style="font-weight:700">'+r.store+'</td>'+
-    '<td>'+(r.dept||'-')+'</td>'+
-    '<td class="mn2" style="font-weight:700">'+r.itemno+'</td>'+
-    '<td class="tdl dsc"><div class="dn3">'+r.desc+'</div></td>'+
-    '<td class="mn2">'+((r.price||0).toLocaleString())+'</td>'+
-    '<td>'+agBdg(r.aging)+'</td>'+
-    '<td class="mn2">'+r.com+'</td><td class="mn2">'+r.count+'</td>'+
-    '<td>'+diffCell(r.diff)+'</td>'+
-    '<td>'+yn(r.display)+'</td><td>'+rm(r.rmDisplay)+'</td>'+
-    '<td>'+yn(r.priceyn)+'</td><td>'+rm(r.rmPrice)+'</td>'+
-    '<td>'+yn(r.cond)+'</td><td>'+rm(r.rmCond)+'</td>'+
-    '<td style="white-space:nowrap">'+rowActs(r)+'</td>'+
-    '</tr>';
+  var tb = document.getElementById('myTblB');
+  if (!tb) return;
+  var my = allRows.filter(function(r){ return sessionIds.has(r.id); });
+  document.getElementById('myCnt').textContent = my.length;
+  if (!my.length) {
+    tb.innerHTML = '<tr><td colspan="17"><div class="es"><div class="ei">📦</div><div>ยังไม่มีรายการใน Session นี้</div></div></td></tr>';
+    return;
+  }
+  tb.innerHTML = my.map(function(r,i){
+    return '<tr>'
+      +'<td>'+(i+1)+'</td>'
+      +'<td class="mn2" style="font-weight:700">'+r.store+'</td>'
+      +'<td>'+(r.dept||'-')+'</td>'
+      +'<td class="mn2" style="font-weight:700">'+r.itemno+'</td>'
+      +'<td class="tdl dsc"><div class="dn3">'+r.desc+'</div></td>'
+      +'<td class="mn2">'+((r.price||0).toLocaleString())+'</td>'
+      +'<td>'+agBdg(r.aging)+'</td>'
+      +'<td class="mn2">'+r.com+'</td><td class="mn2">'+r.count+'</td>'
+      +'<td>'+diffCell(r.diff)+'</td>'
+      +'<td>'+yn(r.display)+'</td><td>'+rm(r.rmDisplay)+'</td>'
+      +'<td>'+yn(r.priceyn)+'</td><td>'+rm(r.rmPrice)+'</td>'
+      +'<td>'+yn(r.cond)+'</td><td>'+rm(r.rmCond)+'</td>'
+      +'<td style="white-space:nowrap">'+rowActs(r)+'</td>'
+      +'</tr>';
   }).join('');
 }
 
 // ===== ALL TABLE =====
 function getFilteredRows(){
-  var data=[...allRows];
-  var fs=document.getElementById('filt_store')?.value.trim();
-  var freg=document.getElementById('filt_reg')?.value;
-  var fzone=document.getElementById('filt_zone')?.value;
-  var fsm=document.getElementById('filt_sm')?.value;
-  var fam=document.getElementById('filt_am')?.value;
-  var fd=document.getElementById('filt_date')?.value;
-  var fi=document.getElementById('filt_item')?.value.trim();
-  var fiss=document.getElementById('filt_iss')?.value;
-  if(fs)data=data.filter(function(r){return fs.split(',').some(function(s){return String(r.store).trim()===s.trim();});});
-  if(freg)data=data.filter(function(r){return (r.regional||getStoreInfo(r.store)?.[2]||'')===freg;});
-  if(fzone)data=data.filter(function(r){return (r.zone||getStoreInfo(r.store)?.[1]||'')===fzone;});
-  if(fsm)data=data.filter(function(r){return (r.sm||getStoreInfo(r.store)?.[3]||'')===fsm;});
-  if(fam)data=data.filter(function(r){return (r.am||getStoreInfo(r.store)?.[4]||'')===fam;});
-  if(fd)data=data.filter(function(r){return r.date===fd;});
-  if(fi)data=data.filter(function(r){return r.itemno&&r.itemno.includes(fi);});
-  if(fiss==='issue')data=data.filter(function(r){return r.display==='no'||r.priceyn==='no'||r.cond==='no';});
-  if(fiss==='ok')data=data.filter(function(r){return r.display!=='no'&&r.priceyn!=='no'&&r.cond!=='no';});
+  var data = allRows.slice();
+  var fs   = (document.getElementById('filt_store')?.value||'').trim();
+  var freg = document.getElementById('filt_reg')?.value  || '';
+  var fz   = document.getElementById('filt_zone')?.value || '';
+  var fsm  = document.getElementById('filt_sm')?.value   || '';
+  var fam  = document.getElementById('filt_am')?.value   || '';
+  var fd   = document.getElementById('filt_date')?.value || '';
+  var fi   = (document.getElementById('filt_item')?.value||'').trim();
+  var fiss = document.getElementById('filt_iss')?.value  || '';
+  if (fs)   data = data.filter(function(r){ return fs.split(',').some(function(s){ return String(r.store).trim()===s.trim(); }); });
+  if (freg) data = data.filter(function(r){ return (r.regional||(getStoreInfo(r.store)||[])[2]||'')===freg; });
+  if (fz)   data = data.filter(function(r){ return (r.zone||(getStoreInfo(r.store)||[])[1]||'')===fz; });
+  if (fsm)  data = data.filter(function(r){ return (r.sm||(getStoreInfo(r.store)||[])[3]||'')===fsm; });
+  if (fam)  data = data.filter(function(r){ return (r.am||(getStoreInfo(r.store)||[])[4]||'')===fam; });
+  if (fd)   data = data.filter(function(r){ return r.date===fd; });
+  if (fi)   data = data.filter(function(r){ return r.itemno && r.itemno.includes(fi); });
+  if (fiss==='issue') data = data.filter(function(r){ return r.display==='no'||r.priceyn==='no'||r.cond==='no'; });
+  if (fiss==='ok')    data = data.filter(function(r){ return r.display!=='no'&&r.priceyn!=='no'&&r.cond!=='no'; });
   return data;
 }
 
 function renderAll(){
-  var tb=document.getElementById('allTblB');
-  var data=getFilteredRows();
-  document.getElementById('allCnt').textContent=data.length;
-  if(!data.length){tb.innerHTML='<tr><td colspan="23"><div class="es"><div class="ei">📊</div><div>ไม่มีข้อมูล</div></div></td></tr>';return;}
-  tb.innerHTML=data.map(function(r,i){
-    var si=getStoreInfo(r.store);
-    var sname=r.storeName||(si?si[0]:'');
-    var zone=r.zone||(si?si[1]:'');
-    var reg=r.regional||(si?si[2]:'');
-    var sm=r.sm||(si?si[3]:'');
-    return'<tr>'+
-      '<td>'+(i+1)+'</td>'+
-      '<td class="mn2" style="font-weight:700">'+r.store+'</td>'+
-      '<td class="tdl" style="font-size:11px;max-width:150px">'+sname.replace('บมจ.ซีพี แอ็กซ์ตร้า ','')+'</td>'+
-      '<td><span class="sch">'+zone+'</span></td>'+
-      '<td style="font-size:10px;white-space:nowrap">'+reg+'</td>'+
-      '<td style="font-size:10px;max-width:130px;word-break:break-word">'+sm+'</td>'+
-      '<td style="font-size:10px;white-space:nowrap">'+(r.date||'')+'</td>'+
-      '<td style="font-size:10px">'+(r.auditor||'')+'</td>'+
-      '<td>'+(r.dept||'-')+'</td>'+
-      '<td class="mn2" style="font-weight:700">'+r.itemno+'</td>'+
-      '<td class="tdl dsc"><div class="dn3">'+r.desc+'</div></td>'+
-      '<td class="mn2">'+((r.price||0).toLocaleString())+'</td>'+
-      '<td>'+agBdg(r.aging)+'</td>'+
-      '<td class="mn2">'+r.com+'</td><td class="mn2">'+r.count+'</td>'+
-      '<td>'+diffCell(r.diff)+'</td>'+
-      '<td>'+yn(r.display)+'</td><td>'+rm(r.rmDisplay)+'</td>'+
-      '<td>'+yn(r.priceyn)+'</td><td>'+rm(r.rmPrice)+'</td>'+
-      '<td>'+yn(r.cond)+'</td><td>'+rm(r.rmCond)+'</td>'+
-      '<td style="white-space:nowrap">'+rowActs(r)+'</td>'+
-      '</tr>';
+  var tb = document.getElementById('allTblB');
+  if (!tb) return;
+  var data = getFilteredRows();
+  document.getElementById('allCnt').textContent = data.length;
+  if (!data.length) {
+    tb.innerHTML = '<tr><td colspan="23"><div class="es"><div class="ei">📊</div><div>ไม่มีข้อมูล</div></div></td></tr>';
+    return;
+  }
+  tb.innerHTML = data.map(function(r,i){
+    var si    = getStoreInfo(r.store)||[];
+    var sname = r.storeName || si[0] || '';
+    var zone  = r.zone     || si[1] || '';
+    var reg   = r.regional || si[2] || '';
+    var sm    = r.sm       || si[3] || '';
+    return '<tr>'
+      +'<td>'+(i+1)+'</td>'
+      +'<td class="mn2" style="font-weight:700">'+r.store+'</td>'
+      +'<td class="tdl" style="font-size:11px;max-width:150px">'+sname.replace('บมจ.ซีพี แอ็กซ์ตร้า ','')+'</td>'
+      +'<td><span class="sch">'+zone+'</span></td>'
+      +'<td style="font-size:10px;white-space:nowrap">'+reg+'</td>'
+      +'<td style="font-size:10px;max-width:130px;word-break:break-word">'+sm+'</td>'
+      +'<td style="font-size:10px;white-space:nowrap">'+(r.date||'')+'</td>'
+      +'<td style="font-size:10px">'+(r.auditor||'')+'</td>'
+      +'<td>'+(r.dept||'-')+'</td>'
+      +'<td class="mn2" style="font-weight:700">'+r.itemno+'</td>'
+      +'<td class="tdl dsc"><div class="dn3">'+r.desc+'</div></td>'
+      +'<td class="mn2">'+((r.price||0).toLocaleString())+'</td>'
+      +'<td>'+agBdg(r.aging)+'</td>'
+      +'<td class="mn2">'+r.com+'</td><td class="mn2">'+r.count+'</td>'
+      +'<td>'+diffCell(r.diff)+'</td>'
+      +'<td>'+yn(r.display)+'</td><td>'+rm(r.rmDisplay)+'</td>'
+      +'<td>'+yn(r.priceyn)+'</td><td>'+rm(r.rmPrice)+'</td>'
+      +'<td>'+yn(r.cond)+'</td><td>'+rm(r.rmCond)+'</td>'
+      +'<td style="white-space:nowrap">'+rowActs(r)+'</td>'
+      +'</tr>';
   }).join('');
 }
 
 function clearFilts(){
-  ['filt_store','filt_date','filt_item'].forEach(function(id){document.getElementById(id).value='';});
-  ['filt_reg','filt_zone','filt_sm','filt_am','filt_iss'].forEach(function(id){document.getElementById(id).value='';});
-  populateFilterDropdowns();renderAll();
+  ['filt_store','filt_date','filt_item'].forEach(function(id){ document.getElementById(id).value=''; });
+  ['filt_reg','filt_zone','filt_sm','filt_am','filt_iss'].forEach(function(id){ document.getElementById(id).value=''; });
+  populateFilterDropdowns(); renderAll();
 }
 
 // ===== DELETE / CLEAR =====
 function delRow(fbKey){
-  if(!confirm('ยืนยันลบรายการนี้?'))return;
-  fbDelete(fbKey,function(){showToast('ลบรายการแล้ว');});
+  if (!confirm('ยืนยันลบรายการนี้?')) return;
+  fbDelete(fbKey, function(){ showToast('ลบรายการแล้ว'); });
 }
 function clearMy(){
-  if(!sessionIds.size)return;
-  if(!confirm('ลบ '+sessionIds.size+' รายการใน Session นี้?'))return;
-  var myFbKeys=allRows.filter(function(r){return sessionIds.has(r.id);}).map(function(r){return r.fbKey;});
-  var count=0;
-  myFbKeys.forEach(function(k){fbDelete(k,function(){count++;if(count===myFbKeys.length){sessionIds.clear();showToast('ล้าง Session แล้ว');}});});
+  if (!sessionIds.size) return;
+  if (!confirm('ลบ '+sessionIds.size+' รายการใน Session นี้?')) return;
+  var keys = allRows.filter(function(r){ return sessionIds.has(r.id); }).map(function(r){ return r.fbKey; });
+  var done = 0;
+  keys.forEach(function(k){ fbDelete(k, function(){ done++; if(done===keys.length){ sessionIds.clear(); showToast('ล้าง Session แล้ว'); } }); });
 }
 
 // ===== EDIT MODAL =====
 function openEdit(fbKey){
-  var r=allRows.find(function(x){return x.fbKey===fbKey;});if(!r)return;
-  document.getElementById('eId').value=fbKey;
-  ['Item','Dept','Desc','Aging'].forEach(function(k){document.getElementById('e'+k).value=r[k.toLowerCase()]||'';});
-  document.getElementById('ePrice').value=r.price;
-  document.getElementById('eCom').value=r.com;
-  document.getElementById('eCnt').value=r.count;
-  document.getElementById('eDiff').value=r.diff===0?'0':(r.diff>0?'+'+r.diff:String(r.diff));
-  document.getElementById('eDisp').value=r.display||'';
-  document.getElementById('ePrYN').value=r.priceyn||'';
-  document.getElementById('eCond').value=r.cond||'';
-  document.getElementById('eRmD').value=r.rmDisplay||'';
-  document.getElementById('eRmP').value=r.rmPrice||'';
-  document.getElementById('eRmC').value=r.rmCond||'';
+  var r = allRows.find(function(x){ return x.fbKey===fbKey; });
+  if (!r) return;
+  document.getElementById('eId').value = fbKey;
+  ['Item','Dept','Desc','Aging'].forEach(function(k){ document.getElementById('e'+k).value = r[k.toLowerCase()]||''; });
+  document.getElementById('ePrice').value = r.price;
+  document.getElementById('eCom').value   = r.com;
+  document.getElementById('eCnt').value   = r.count;
+  document.getElementById('eDiff').value  = r.diff===0?'0':(r.diff>0?'+'+r.diff:String(r.diff));
+  document.getElementById('eDisp').value  = r.display  || '';
+  document.getElementById('ePrYN').value  = r.priceyn  || '';
+  document.getElementById('eCond').value  = r.cond     || '';
+  document.getElementById('eRmD').value   = r.rmDisplay|| '';
+  document.getElementById('eRmP').value   = r.rmPrice  || '';
+  document.getElementById('eRmC').value   = r.rmCond   || '';
   [['d',r.display,'eynD'],['p',r.priceyn,'eynP'],['c',r.cond,'eynC']].forEach(function(arr){
-    var gid=arr[2];var v=arr[1];
-    document.querySelectorAll('#'+gid+' .myb').forEach(function(b){b.classList.remove('active');});
-    if(v){ var btn=document.querySelector('#'+gid+' .myb.'+v); if(btn)btn.classList.add('active'); }
+    document.querySelectorAll('#'+arr[2]+' .myb').forEach(function(b){ b.classList.remove('active'); });
+    if (arr[1]) { var b=document.querySelector('#'+arr[2]+' .myb.'+arr[1]); if(b) b.classList.add('active'); }
   });
   document.getElementById('editMo').classList.add('show');
 }
-function setEYN(key,val,btn){
-  document.getElementById(key==='d'?'eDisp':key==='p'?'ePrYN':'eCond').value=val;
-  btn.closest('.myn').querySelectorAll('.myb').forEach(function(b){b.classList.remove('active');});
+function setEYN(key, val, btn){
+  document.getElementById(key==='d'?'eDisp':key==='p'?'ePrYN':'eCond').value = val;
+  btn.closest('.myn').querySelectorAll('.myb').forEach(function(b){ b.classList.remove('active'); });
   btn.classList.add('active');
 }
 function eCalcDiff(){
-  var c=parseFloat(document.getElementById('eCom').value)||0;
-  var n=parseFloat(document.getElementById('eCnt').value)||0;
-  var d=n-c;document.getElementById('eDiff').value=d===0?'0':(d>0?'+'+d:String(d));
+  var c = parseFloat(document.getElementById('eCom').value)||0;
+  var n = parseFloat(document.getElementById('eCnt').value)||0;
+  var d = n-c; document.getElementById('eDiff').value = d===0?'0':(d>0?'+'+d:String(d));
 }
-function closeEditMo(){document.getElementById('editMo').classList.remove('show');}
+function closeEditMo(){ document.getElementById('editMo').classList.remove('show'); }
 function saveEdit(){
-  var fbKey=document.getElementById('eId').value;
-  var existing=allRows.find(function(r){return r.fbKey===fbKey;});if(!existing)return;
-  var c=parseFloat(document.getElementById('eCom').value)||0;
-  var n=parseFloat(document.getElementById('eCnt').value)||0;
-  var si=getStoreInfo(existing.store);
-  var updated=Object.assign({},existing,{
-    itemno:document.getElementById('eItem').value.trim(),
-    dept:document.getElementById('eDept').value.trim(),
-    desc:document.getElementById('eDesc').value.trim(),
-    price:parseFloat(document.getElementById('ePrice').value)||0,
-    aging:document.getElementById('eAging').value.trim(),
-    com:c,count:n,diff:n-c,
-    display:document.getElementById('eDisp').value,
-    priceyn:document.getElementById('ePrYN').value,
-    cond:document.getElementById('eCond').value,
-    rmDisplay:document.getElementById('eRmD').value.trim(),
-    rmPrice:document.getElementById('eRmP').value.trim(),
-    rmCond:document.getElementById('eRmC').value.trim(),
-    storeName:si?si[0]:'',zone:si?si[1]:'',regional:si?si[2]:'',sm:si?si[3]:'',am:si?si[4]:''
+  var fbKey = document.getElementById('eId').value;
+  var r = allRows.find(function(x){ return x.fbKey===fbKey; }); if(!r) return;
+  var c  = parseFloat(document.getElementById('eCom').value)  ||0;
+  var n  = parseFloat(document.getElementById('eCnt').value)  ||0;
+  var si = getStoreInfo(r.store)||[];
+  var updated = {};
+  // Copy all existing fields first
+  Object.keys(r).forEach(function(k){ updated[k]=r[k]; });
+  Object.assign(updated, {
+    itemno: document.getElementById('eItem').value.trim(),
+    dept:   document.getElementById('eDept').value.trim(),
+    desc:   document.getElementById('eDesc').value.trim(),
+    price:  parseFloat(document.getElementById('ePrice').value)||0,
+    aging:  document.getElementById('eAging').value.trim(),
+    com: c, count: n, diff: n-c,
+    display:   document.getElementById('eDisp').value,
+    priceyn:   document.getElementById('ePrYN').value,
+    cond:      document.getElementById('eCond').value,
+    rmDisplay: document.getElementById('eRmD').value.trim(),
+    rmPrice:   document.getElementById('eRmP').value.trim(),
+    rmCond:    document.getElementById('eRmC').value.trim(),
+    storeName: si[0]||'', zone: si[1]||'', regional: si[2]||'', sm: si[3]||'', am: si[4]||''
   });
-  fbUpdate(fbKey,updated);
+  fbUpdate(fbKey, updated);
   closeEditMo();
   showToast('💾 บันทึกการแก้ไขแล้ว');
 }
 
-// ===== EXPORT CSV =====
+// ===== EXPORT =====
 function makeCSV(data){
-  var h=['#','Store','ชื่อสาขา','Zone','Regional','SM','AM','วันที่','ผู้ตรวจ','Dept','Item No','Description','Selling Price','Aging Status','COM','COUNT','Diff','Display YES/NO','Display Remark','Price YES/NO','Price Remark','สภาพสินค้า YES/NO','สภาพสินค้า Remark'];
-  var rows=data.map(function(r,i){
-    var si=getStoreInfo(r.store);
-    return[i+1,r.store,'"'+(r.storeName||(si?si[0]:''))+'"',r.zone||(si?si[1]:''),r.regional||(si?si[2]:''),'"'+(r.sm||(si?si[3]:''))+'"','"'+(r.am||(si?si[4]:''))+'"',r.date||'','"'+(r.auditor||'')+'"',r.dept||'',r.itemno,'"'+r.desc+'"',r.price||0,r.aging||'',r.com,r.count,r.diff,r.display||'','"'+(r.rmDisplay||'')+'"',r.priceyn||'','"'+(r.rmPrice||'')+'"',r.cond||'','"'+(r.rmCond||'')+'"'].join(',');
+  var h = ['#','Store','ชื่อสาขา','Zone','Regional','SM','AM','วันที่','ผู้ตรวจ','Dept',
+           'Item No','Description','Selling Price','Aging Status','COM','COUNT','Diff',
+           'Display YES/NO','Display Remark','Price YES/NO','Price Remark','สภาพสินค้า YES/NO','สภาพสินค้า Remark'];
+  var rows = data.map(function(r,i){
+    var si = getStoreInfo(r.store)||[];
+    return [
+      i+1, r.store,
+      '"'+(r.storeName||si[0]||'')+'"',
+      r.zone||si[1]||'', r.regional||si[2]||'',
+      '"'+(r.sm||si[3]||'')+'"', '"'+(r.am||si[4]||'')+'"',
+      r.date||'', '"'+(r.auditor||'')+'"',
+      r.dept||'', r.itemno,
+      '"'+r.desc+'"', r.price||0, r.aging||'',
+      r.com, r.count, r.diff,
+      r.display||'', '"'+(r.rmDisplay||'')+'"',
+      r.priceyn||'', '"'+(r.rmPrice||'')+'"',
+      r.cond||'', '"'+(r.rmCond||'')+'"'
+    ].join(',');
   });
-  return'﻿'+[h.join(','),...rows].join('
+  return '﻿' + [h.join(',')].concat(rows).join('
 ');
 }
-function dlCSV(c,n){var b=new Blob([c],{type:'text/csv;charset=utf-8'});var u=URL.createObjectURL(b);var a=document.createElement('a');a.href=u;a.download=n;a.click();URL.revokeObjectURL(u);}
-function exportMyCSV(){var my=allRows.filter(function(r){return sessionIds.has(r.id);});if(!my.length){showToast('ไม่มีข้อมูล',true);return;}dlCSV(makeCSV(my),'aging_my_'+new Date().toISOString().slice(0,10)+'.csv');showToast('📥 Export CSV สำเร็จ');}
-function exportAllCSV(){if(!allRows.length){showToast('ไม่มีข้อมูล',true);return;}dlCSV(makeCSV(getFilteredRows()),'aging_all_'+new Date().toISOString().slice(0,10)+'.csv');showToast('📥 Export All CSV สำเร็จ');}
+function dlCSV(c,n){ var b=new Blob([c],{type:'text/csv;charset=utf-8'});var u=URL.createObjectURL(b);var a=document.createElement('a');a.href=u;a.download=n;a.click();URL.revokeObjectURL(u); }
+function exportMyCSV(){
+  var my=allRows.filter(function(r){return sessionIds.has(r.id);});
+  if(!my.length){showToast('ไม่มีข้อมูล',true);return;}
+  dlCSV(makeCSV(my),'aging_my_'+new Date().toISOString().slice(0,10)+'.csv');
+  showToast('📥 Export CSV สำเร็จ');
+}
+function exportAllCSV(){
+  var data = getFilteredRows();
+  if(!data.length){showToast('ไม่มีข้อมูล',true);return;}
+  dlCSV(makeCSV(data),'aging_all_'+new Date().toISOString().slice(0,10)+'.csv');
+  showToast('📥 Export All CSV สำเร็จ');
+}
 
 // ===== DASHBOARD =====
 function getDashData(){
-  var data=[...allRows];
-  var reg=document.getElementById('df_reg')?.value;
-  var zone=document.getElementById('df_zone')?.value;
-  var sm=document.getElementById('df_sm')?.value;
-  var am=document.getElementById('df_am')?.value;
-  var store=document.getElementById('df_store')?.value.trim();
-  var date=document.getElementById('df_date')?.value;
-  if(reg)data=data.filter(function(r){return (r.regional||getStoreInfo(r.store)?.[2]||'')===reg;});
-  if(zone)data=data.filter(function(r){return (r.zone||getStoreInfo(r.store)?.[1]||'')===zone;});
-  if(sm)data=data.filter(function(r){return (r.sm||getStoreInfo(r.store)?.[3]||'')===sm;});
-  if(am)data=data.filter(function(r){return (r.am||getStoreInfo(r.store)?.[4]||'')===am;});
-  if(store)data=data.filter(function(r){return String(r.store)===store;});
-  if(date)data=data.filter(function(r){return r.date===date;});
+  var data = allRows.slice();
+  var reg   = document.getElementById('df_reg')?.value   || '';
+  var zone  = document.getElementById('df_zone')?.value  || '';
+  var sm    = document.getElementById('df_sm')?.value    || '';
+  var am    = document.getElementById('df_am')?.value    || '';
+  var store = (document.getElementById('df_store')?.value||'').trim();
+  var date  = document.getElementById('df_date')?.value  || '';
+  if(reg)   data=data.filter(function(r){return(r.regional||(getStoreInfo(r.store)||[])[2]||'')===reg;});
+  if(zone)  data=data.filter(function(r){return(r.zone||(getStoreInfo(r.store)||[])[1]||'')===zone;});
+  if(sm)    data=data.filter(function(r){return(r.sm||(getStoreInfo(r.store)||[])[3]||'')===sm;});
+  if(am)    data=data.filter(function(r){return(r.am||(getStoreInfo(r.store)||[])[4]||'')===am;});
+  if(store) data=data.filter(function(r){return String(r.store)===store;});
+  if(date)  data=data.filter(function(r){return r.date===date;});
   return data;
 }
-function clearDashFilts(){['df_reg','df_zone','df_sm','df_am'].forEach(function(id){document.getElementById(id).value='';});document.getElementById('df_store').value='';document.getElementById('df_date').value='';populateFilterDropdowns();renderDash();}
+function clearDashFilts(){
+  ['df_reg','df_zone','df_sm','df_am'].forEach(function(id){document.getElementById(id).value='';});
+  document.getElementById('df_store').value=''; document.getElementById('df_date').value='';
+  populateFilterDropdowns(); renderDash();
+}
 
 function renderDash(){
-  var data=getDashData();
-  var t=data.length;
-  var dn=data.filter(function(r){return r.display==='no';}).length;
-  var pn=data.filter(function(r){return r.priceyn==='no';}).length;
-  var cn=data.filter(function(r){return r.cond==='no';}).length;
-  var dn2=data.filter(function(r){return r.diff<0;}).length;
-  var dp2=data.filter(function(r){return r.diff>0;}).length;
-  var iss=data.filter(function(r){return r.display==='no'||r.priceyn==='no'||r.cond==='no';}).length;
-  var pct=t?Math.round(iss/t*100):0;
-  var stores=[...new Set(data.map(function(r){return r.store;}))].sort(function(a,b){return +a-+b;});
-  document.getElementById('dCards').innerHTML=
+  var data   = getDashData();
+  var t      = data.length;
+  var dn     = data.filter(function(r){return r.display==='no';}).length;
+  var pn     = data.filter(function(r){return r.priceyn==='no';}).length;
+  var cn     = data.filter(function(r){return r.cond==='no';}).length;
+  var dn2    = data.filter(function(r){return r.diff<0;}).length;
+  var dp2    = data.filter(function(r){return r.diff>0;}).length;
+  var iss    = data.filter(function(r){return r.display==='no'||r.priceyn==='no'||r.cond==='no';}).length;
+  var pct    = t ? Math.round(iss/t*100) : 0;
+  var stores = [...new Set(data.map(function(r){return r.store;}))].sort(function(a,b){return+a-+b;});
+
+  document.getElementById('dCards').innerHTML =
     '<div class="sc acc"><div class="sico">📦</div><div class="sv">'+t+'</div><div class="slb">รายการทั้งหมด</div><div class="ss">'+stores.length+' สาขา</div></div>'+
     '<div class="sc red"><div class="sico">❌</div><div class="sv">'+iss+'</div><div class="slb">มีปัญหา</div><div class="ss">'+pct+'%</div></div>'+
     '<div class="sc amb"><div class="sico">🏪</div><div class="sv">'+dn+'</div><div class="slb">Display ไม่ผ่าน</div><div class="ss">'+(t?Math.round(dn/t*100):0)+'%</div></div>'+
     '<div class="sc amb"><div class="sico">🏷</div><div class="sv">'+pn+'</div><div class="slb">Price ไม่ตรง</div><div class="ss">'+(t?Math.round(pn/t*100):0)+'%</div></div>'+
     '<div class="sc amb"><div class="sico">🔍</div><div class="sv">'+cn+'</div><div class="slb">สภาพสินค้าไม่ผ่าน</div><div class="ss">'+(t?Math.round(cn/t*100):0)+'%</div></div>'+
-    '<div class="sc red"><div class="sico">📉</div><div class="sv">'+dn2+'</div><div class="slb">Stock ขาด (Diff&lt;0)</div><div class="ss">COUNT &lt; COM</div></div>'+
-    '<div class="sc grn"><div class="sico">📈</div><div class="sv">'+dp2+'</div><div class="slb">Stock เกิน (Diff&gt;0)</div><div class="ss">COUNT &gt; COM</div></div>'+
+    '<div class="sc red"><div class="sico">📉</div><div class="sv">'+dn2+'</div><div class="slb">Stock ขาด</div><div class="ss">Diff&lt;0</div></div>'+
+    '<div class="sc grn"><div class="sico">📈</div><div class="sv">'+dp2+'</div><div class="slb">Stock เกิน</div><div class="ss">Diff&gt;0</div></div>'+
     '<div class="sc grn"><div class="sico">✅</div><div class="sv">'+(t-iss)+'</div><div class="slb">ผ่านทุกรายการ</div><div class="ss">'+(t?Math.round((t-iss)/t*100):0)+'%</div></div>';
-  function barC(cid,fn,col){
-    var el=document.getElementById(cid);
-    if(!t||!stores.length){el.innerHTML='<div style="color:var(--tm);font-size:11px;padding:6px">ไม่มีข้อมูล</div>';return;}
-    var sd=stores.map(function(s){var d=data.filter(function(r){return r.store==s;});var c=fn(d);return{s:s,c:c,t:d.length,pct:d.length?Math.round(c/d.length*100):0};}).sort(function(a,b){return b.c-a.c;}).slice(0,15);
-    var mx=Math.max.apply(null,sd.map(function(x){return x.c;}).concat([1]));
-    el.innerHTML=sd.map(function(d){var si=getStoreInfo(d.s);return'<div class="br2"><div class="brl" title="'+(si?si[0]:'')+'">St.'+d.s+'</div><div class="brw"><div class="brf" style="width:'+Math.round(d.c/mx*100)+'%;background:'+col+'"><span class="brv">'+d.c+'</span></div></div><div style="font-size:10px;color:var(--tm);min-width:32px">'+d.pct+'%</div></div>';}).join('');
+
+  function barC(cid, fn, col){
+    var el = document.getElementById(cid);
+    if (!t||!stores.length) { el.innerHTML='<div style="color:var(--tm);font-size:11px;padding:8px">ไม่มีข้อมูล</div>'; return; }
+    var sd = stores.map(function(s){
+      var d=data.filter(function(r){return r.store==s;}); var c=fn(d);
+      return {s:s,c:c,t:d.length,pct:d.length?Math.round(c/d.length*100):0};
+    }).sort(function(a,b){return b.c-a.c;}).slice(0,15);
+    var mx = Math.max.apply(null, sd.map(function(x){return x.c;}).concat([1]));
+    el.innerHTML = sd.map(function(d){
+      var si=getStoreInfo(d.s)||[];
+      return '<div class="br2">'
+        +'<div class="brl" title="'+(si[0]||'')+'">St.'+d.s+'</div>'
+        +'<div class="brw"><div class="brf" style="width:'+Math.round(d.c/mx*100)+'%;background:'+col+'">'
+        +'<span class="brv">'+d.c+'</span></div></div>'
+        +'<div style="font-size:10px;color:var(--tm);min-width:32px">'+d.pct+'%</div>'
+        +'</div>';
+    }).join('');
   }
-  barC('chDisp',function(d){return d.filter(function(r){return r.display==='no';}).length;},'#ef4444');
-  barC('chPrice',function(d){return d.filter(function(r){return r.priceyn==='no';}).length;},'#8b5cf6');
-  barC('chCond',function(d){return d.filter(function(r){return r.cond==='no';}).length;},'#f59e0b');
-  barC('chDiff',function(d){return d.filter(function(r){return r.diff<0;}).length;},'#3b82f6');
-  var ib=document.getElementById('dIssB');
-  var issRows=data.filter(function(r){return r.display==='no'||r.priceyn==='no'||r.cond==='no';});
-  if(!issRows.length){ib.innerHTML='<tr><td colspan="10" style="text-align:center;color:var(--tm);padding:16px">✅ ไม่พบรายการที่มีปัญหา</td></tr>';}
-  else{ib.innerHTML=issRows.map(function(r){var si=getStoreInfo(r.store);var z=r.zone||(si?si[1]:'');var sm=r.sm||(si?si[3]:'');return'<tr><td><span class="sch">'+r.store+'</span></td><td><span class="sch">'+z+'</span></td><td style="font-size:10px;max-width:120px">'+sm+'</td><td style="font-size:10px">'+(r.date||'')+'</td><td class="mn2" style="font-weight:700">'+r.itemno+'</td><td style="font-size:11px;max-width:140px">'+r.desc+'</td><td>'+(r.display==='no'?'<span class="bdg bn">NO</span><br><small style="font-size:9px;color:var(--nf)">'+(r.rmDisplay||'')+'</small>':'<span class="bdg by">YES</span>')+'</td><td>'+(r.priceyn==='no'?'<span class="bdg bn">NO</span><br><small style="font-size:9px;color:var(--nf)">'+(r.rmPrice||'')+'</small>':'<span class="bdg by">YES</span>')+'</td><td>'+(r.cond==='no'?'<span class="bdg bn">NO</span><br><small style="font-size:9px;color:var(--nf)">'+(r.rmCond||'')+'</small>':'<span class="bdg by">YES</span>')+'</td><td>'+diffCell(r.diff)+'</td></tr>';}).join('');}
-  var stb=document.getElementById('dStB');
-  if(!stores.length){stb.innerHTML='<tr><td colspan="12" style="text-align:center;color:var(--tm);padding:16px">ไม่มีข้อมูล</td></tr>';}
-  else{stb.innerHTML=stores.map(function(s){
-    var sd=data.filter(function(r){return r.store==s;});var si=getStoreInfo(s);
-    var dn3=sd.filter(function(r){return r.display==='no';}).length;
-    var pn3=sd.filter(function(r){return r.priceyn==='no';}).length;
-    var cn3=sd.filter(function(r){return r.cond==='no';}).length;
-    var di3=sd.filter(function(r){return r.diff<0;}).length;
-    var iss3=sd.filter(function(r){return r.display==='no'||r.priceyn==='no'||r.cond==='no';}).length;
-    var pct3=sd.length?Math.round(iss3/sd.length*100):0;
-    var cls=pct3>=50?'ph':pct3>=20?'pm':'pl';
-    var sn=(sd[0]&&sd[0].storeName)||(si?si[0]:'');sn=sn.replace('บมจ.ซีพี แอ็กซ์ตร้า ','');
-    var z=(sd[0]&&sd[0].zone)||(si?si[1]:'');
-    var rg=(sd[0]&&sd[0].regional)||(si?si[2]:'');
-    var sm=(sd[0]&&sd[0].sm)||(si?si[3]:'');
-    var am=(sd[0]&&sd[0].am)||(si?si[4]:'');
-    return'<tr><td><span class="sch">'+s+'</span></td>'+
-      '<td style="font-size:11px;max-width:160px">'+sn+'</td>'+
-      '<td><span class="sch">'+z+'</span></td>'+
-      '<td style="font-size:10px">'+rg+'</td>'+
-      '<td style="font-size:10px;max-width:130px">'+sm+'</td>'+
-      '<td style="font-size:10px;max-width:130px">'+am+'</td>'+
-      '<td class="mn2">'+sd.length+'</td>'+
-      '<td>'+(dn3?'<span style="color:var(--dn);font-weight:700">'+dn3+'</span>':'<span style="color:var(--dp)">0</span>')+'</td>'+
-      '<td>'+(pn3?'<span style="color:var(--dn);font-weight:700">'+pn3+'</span>':'<span style="color:var(--dp)">0</span>')+'</td>'+
-      '<td>'+(cn3?'<span style="color:var(--dn);font-weight:700">'+cn3+'</span>':'<span style="color:var(--dp)">0</span>')+'</td>'+
-      '<td>'+(di3?'<span style="color:var(--dn);font-weight:700">'+di3+'</span>':'<span style="color:var(--dp)">0</span>')+'</td>'+
-      '<td><span class="pb '+cls+'">'+pct3+'%</span></td>'+
-      '</tr>';
-  }).join('');}
+  barC('chDisp', function(d){return d.filter(function(r){return r.display==='no';}).length;}, '#ef4444');
+  barC('chPrice', function(d){return d.filter(function(r){return r.priceyn==='no';}).length;}, '#8b5cf6');
+  barC('chCond',  function(d){return d.filter(function(r){return r.cond==='no';}).length;},    '#f59e0b');
+  barC('chDiff',  function(d){return d.filter(function(r){return r.diff<0;}).length;},         '#3b82f6');
+
+  var ib = document.getElementById('dIssB');
+  var issRows = data.filter(function(r){return r.display==='no'||r.priceyn==='no'||r.cond==='no';});
+  ib.innerHTML = issRows.length ? issRows.map(function(r){
+    var si=getStoreInfo(r.store)||[];
+    return '<tr>'
+      +'<td><span class="sch">'+r.store+'</span></td>'
+      +'<td><span class="sch">'+(r.zone||si[1]||'')+'</span></td>'
+      +'<td style="font-size:10px;max-width:120px">'+(r.sm||si[3]||'')+'</td>'
+      +'<td style="font-size:10px">'+(r.date||'')+'</td>'
+      +'<td class="mn2" style="font-weight:700">'+r.itemno+'</td>'
+      +'<td style="font-size:11px;max-width:140px">'+r.desc+'</td>'
+      +'<td>'+(r.display==='no'?'<span class="bdg bn">NO</span><br><small style="font-size:9px;color:var(--nf)">'+(r.rmDisplay||'')+'</small>':'<span class="bdg by">YES</span>')+'</td>'
+      +'<td>'+(r.priceyn==='no'?'<span class="bdg bn">NO</span><br><small style="font-size:9px;color:var(--nf)">'+(r.rmPrice||'')+'</small>':'<span class="bdg by">YES</span>')+'</td>'
+      +'<td>'+(r.cond==='no'?'<span class="bdg bn">NO</span><br><small style="font-size:9px;color:var(--nf)">'+(r.rmCond||'')+'</small>':'<span class="bdg by">YES</span>')+'</td>'
+      +'<td>'+diffCell(r.diff)+'</td>'
+      +'</tr>';
+  }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--tm);padding:16px">✅ ไม่พบรายการที่มีปัญหา</td></tr>';
+
+  var stb = document.getElementById('dStB');
+  stb.innerHTML = stores.length ? stores.map(function(s){
+    var sd  = data.filter(function(r){return r.store==s;});
+    var si  = getStoreInfo(s)||[];
+    var dn3 = sd.filter(function(r){return r.display==='no';}).length;
+    var pn3 = sd.filter(function(r){return r.priceyn==='no';}).length;
+    var cn3 = sd.filter(function(r){return r.cond==='no';}).length;
+    var di3 = sd.filter(function(r){return r.diff<0;}).length;
+    var i3  = sd.filter(function(r){return r.display==='no'||r.priceyn==='no'||r.cond==='no';}).length;
+    var p3  = sd.length ? Math.round(i3/sd.length*100) : 0;
+    var cl  = p3>=50?'ph':p3>=20?'pm':'pl';
+    var sn  = ((sd[0]&&sd[0].storeName)||si[0]||'').replace('บมจ.ซีพี แอ็กซ์ตร้า ','');
+    return '<tr>'
+      +'<td><span class="sch">'+s+'</span></td>'
+      +'<td style="font-size:11px;max-width:160px">'+sn+'</td>'
+      +'<td><span class="sch">'+((sd[0]&&sd[0].zone)||si[1]||'')+'</span></td>'
+      +'<td style="font-size:10px">'+((sd[0]&&sd[0].regional)||si[2]||'')+'</td>'
+      +'<td style="font-size:10px;max-width:130px">'+((sd[0]&&sd[0].sm)||si[3]||'')+'</td>'
+      +'<td style="font-size:10px;max-width:130px">'+((sd[0]&&sd[0].am)||si[4]||'')+'</td>'
+      +'<td class="mn2">'+sd.length+'</td>'
+      +'<td>'+(dn3?'<span style="color:var(--dn);font-weight:700">'+dn3+'</span>':'<span style="color:var(--dp)">0</span>')+'</td>'
+      +'<td>'+(pn3?'<span style="color:var(--dn);font-weight:700">'+pn3+'</span>':'<span style="color:var(--dp)">0</span>')+'</td>'
+      +'<td>'+(cn3?'<span style="color:var(--dn);font-weight:700">'+cn3+'</span>':'<span style="color:var(--dp)">0</span>')+'</td>'
+      +'<td>'+(di3?'<span style="color:var(--dn);font-weight:700">'+di3+'</span>':'<span style="color:var(--dp)">0</span>')+'</td>'
+      +'<td><span class="pb '+cl+'">'+p3+'%</span></td>'
+      +'</tr>';
+  }).join('') : '<tr><td colspan="12" style="text-align:center;color:var(--tm);padding:16px">ไม่มีข้อมูล</td></tr>';
 }
 
 // ===== TOAST =====
-function showToast(msg,isErr){
-  var t=document.getElementById('toast');t.textContent=msg;
-  t.className='toast'+(isErr?' err':'');t.classList.add('show');
-  setTimeout(function(){t.classList.remove('show');},2800);
+function showToast(msg, isErr){
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (isErr ? ' err' : '');
+  t.classList.add('show');
+  setTimeout(function(){ t.classList.remove('show'); }, 2800);
 }
 
-// ===== KEYBOARD (in script block, not module) =====
-document.getElementById('fItem')&&document.getElementById('fItem').addEventListener('keydown',function(e){if(e.key==='Enter'){document.getElementById('fPrice').focus();e.preventDefault();}});
+// Item field keyboard shortcut
+document.getElementById('fItem') && document.getElementById('fItem').addEventListener('keydown', function(e){
+  if (e.key==='Enter'){ document.getElementById('fPrice').focus(); e.preventDefault(); }
+});
 
+</script>
+
+<!-- ====================================================
+     BLOCK 2: Firebase (async - loaded after Block 1)
+     Login works even if this block fails
+     ==================================================== -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js" 
+        onerror="showSync('error');showToast('⚠️ ไม่สามารถโหลด Firebase - ตรวจสอบอินเทอร์เน็ต',true)">
+</script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+
+<script>
+// Firebase operations — safe wrappers, won't crash if Firebase unavailable
+(function(){
+  var RREF = 'aging_rows';
+  var _db  = null;
+
+  function getDb(){
+    if (_db) return _db;
+    try {
+      if (typeof firebase === 'undefined') return null;
+      if (!firebase.apps.length) {
+        firebase.initializeApp({
+          apiKey:        "AIzaSyDuzNUPrBFVsWvXknbZTXJ2b_qKR0LYHJE",
+          authDomain:    "aging-provision-checklist.firebaseapp.com",
+          databaseURL:   "https://aging-provision-checklist-default-rtdb.asia-southeast1.firebasedatabase.app/",
+          projectId:     "aging-provision-checklist",
+          storageBucket: "aging-provision-checklist.firebasestorage.app",
+          messagingSenderId: "794315783983",
+          appId:         "1:794315783983:web:41a21c6604a0332d11ebda"
+        });
+      }
+      _db = firebase.database();
+      return _db;
+    } catch(e) {
+      console.error('Firebase init error:', e);
+      return null;
+    }
+  }
+
+  // Called from initApp() → connectFirebase()
+  window.connectFirebase = function(){
+    var db = getDb();
+    if (!db) { showSync('error'); showToast('⚠️ Firebase ไม่พร้อม — ตรวจสอบอินเทอร์เน็ต', true); return; }
+    if (window._fbListenerActive) return;
+    window._fbListenerActive = true;
+    showSync('syncing');
+    try {
+      window._fbRef = db.ref(RREF);
+      window._fbRef.on('value', function(snap){
+        var data = snap.val();
+        allRows = data
+          ? Object.entries(data).map(function(e){ return Object.assign({}, e[1], {fbKey: e[0]}); })
+          : [];
+        showSync('online');
+        updateBadges(); renderMy(); renderAll(); renderDash();
+      }, function(err){
+        showSync('error');
+        showToast('⚠️ Firebase: ' + err.message, true);
+      });
+    } catch(e) {
+      showSync('error');
+      showToast('❌ Firebase connection failed', true);
+    }
+  };
+
+  window.fbAdd = function(row, cb){
+    var db = getDb(); if (!db){ showToast('❌ ไม่มีการเชื่อมต่อ Firebase',true); return; }
+    try {
+      showSync('syncing');
+      var nr  = db.ref(RREF).push();
+      row.fbKey = nr.key;
+      nr.set(cleanRow(row)).then(function(){
+        showSync('online'); if(cb) cb(row.fbKey);
+      }).catch(function(e){ showSync('error'); showToast('❌ บันทึกไม่สำเร็จ: '+e.message,true); });
+    } catch(e){ showSync('error'); showToast('❌ บันทึกไม่สำเร็จ',true); }
+  };
+
+  window.fbUpdate = function(fbKey, row){
+    var db = getDb(); if(!db) return;
+    try {
+      showSync('syncing');
+      db.ref(RREF+'/'+fbKey).set(cleanRow(row))
+        .then(function(){ showSync('online'); })
+        .catch(function(e){ showSync('error'); showToast('❌ แก้ไขไม่สำเร็จ',true); });
+    } catch(e){ showSync('error'); }
+  };
+
+  window.fbDelete = function(fbKey, cb){
+    var db = getDb(); if(!db) return;
+    try {
+      showSync('syncing');
+      db.ref(RREF+'/'+fbKey).remove()
+        .then(function(){ showSync('online'); if(cb) cb(); })
+        .catch(function(e){ showSync('error'); showToast('❌ ลบไม่สำเร็จ',true); });
+    } catch(e){ showSync('error'); }
+  };
+
+  function cleanRow(r){
+    var fields = ['id','store','date','auditor','dept','itemno','desc','price','aging',
+                  'com','count','diff','display','rmDisplay','priceyn','rmPrice',
+                  'cond','rmCond','storeName','zone','regional','sm','am'];
+    var o = {};
+    fields.forEach(function(k){ if(r[k]!==undefined && r[k]!==null && r[k]!=='') o[k]=r[k]; });
+    return o;
+  }
+})();
 </script>
 </body>
 </html>
