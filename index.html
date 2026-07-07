@@ -667,7 +667,27 @@ body.show-sb .sb { display:flex !important; }
 // ===== AUTH =====
 var USERS = {
   soa:   { pass: 'makroho', role: 'soa',   label: 'SOA User' },
-  admin: { pass: 'adminho', role: 'admin', label: 'Admin' }
+  admin: { pass: 'adminho', role: 'admin', label: 'Admin' },
+  soa1:  { pass: 'makroho', role: 'soa',   label: 'SOA User 1' },
+  soa2:  { pass: 'makroho', role: 'soa',   label: 'SOA User 2' },
+  soa3:  { pass: 'makroho', role: 'soa',   label: 'SOA User 3' },
+  soa4:  { pass: 'makroho', role: 'soa',   label: 'SOA User 4' },
+  soa5:  { pass: 'makroho', role: 'soa',   label: 'SOA User 5' },
+  soa6:  { pass: 'makroho', role: 'soa',   label: 'SOA User 6' },
+  soa7:  { pass: 'makroho', role: 'soa',   label: 'SOA User 7' },
+  soa8:  { pass: 'makroho', role: 'soa',   label: 'SOA User 8' },
+  soa9:  { pass: 'makroho', role: 'soa',   label: 'SOA User 9' },
+  soa10: { pass: 'makroho', role: 'soa',   label: 'SOA User 10' },
+  soa11: { pass: 'makroho', role: 'soa',   label: 'SOA User 11' },
+  soa12: { pass: 'makroho', role: 'soa',   label: 'SOA User 12' },
+  soa13: { pass: 'makroho', role: 'soa',   label: 'SOA User 13' },
+  soa14: { pass: 'makroho', role: 'soa',   label: 'SOA User 14' },
+  soa15: { pass: 'makroho', role: 'soa',   label: 'SOA User 15' },
+  soa16: { pass: 'makroho', role: 'soa',   label: 'SOA User 16' },
+  soa17: { pass: 'makroho', role: 'soa',   label: 'SOA User 17' },
+  soa18: { pass: 'makroho', role: 'soa',   label: 'SOA User 18' },
+  soa19: { pass: 'makroho', role: 'soa',   label: 'SOA User 19' },
+  soa20: { pass: 'makroho', role: 'soa',   label: 'SOA User 20' }
 };
 var CU = null;
 
@@ -696,7 +716,7 @@ function doLogin() {
       // Update UI
       document.getElementById('uName').textContent = CU.label;
       document.getElementById('uRole').textContent = CU.username;
-      document.body.classList.toggle('role-soa', u === 'soa');
+      document.body.classList.toggle('role-soa', CU.role === 'soa');
       // Theme
       var savedTheme = (typeof localStorage !== 'undefined' && localStorage.getItem('aging_theme')) || 'blue';
       setTheme(savedTheme);
