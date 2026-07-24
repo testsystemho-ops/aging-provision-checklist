@@ -527,7 +527,8 @@ body.show-sb .sb { display:flex !important; }
         <option value="">ทั้งหมด</option>
       </select>
     </div>
-    <div class="fg3"><span class="flbl">วันที่</span><input class="fi" id="filt_date" type="date" oninput="renderAll()"></div>
+    <div class="fg3"><span class="flbl">วันที่ เริ่ม</span><input class="fi" id="filt_date_from" type="date" oninput="renderAll()"></div>
+    <div class="fg3"><span class="flbl">วันที่ สิ้นสุด</span><input class="fi" id="filt_date_to" type="date" oninput="renderAll()"></div>
     <div class="fg3"><span class="flbl">Item No</span><input class="fi" id="filt_item" type="text" placeholder="รหัสสินค้า" style="width:100px" oninput="renderAll()"></div>
     <div class="fg3"><span class="flbl">สถานะ</span>
       <select class="fi" id="filt_iss" onchange="renderAll()" style="width:120px">
@@ -587,7 +588,8 @@ body.show-sb .sb { display:flex !important; }
       </select>
     </div>
     <div class="fg3"><span class="flbl">Store No.</span><input class="fi" id="df_store" type="text" placeholder="เช่น 11" style="width:80px" oninput="renderDash()"></div>
-    <div class="fg3"><span class="flbl">วันที่</span><input class="fi" id="df_date" type="date" oninput="renderDash()"></div>
+    <div class="fg3"><span class="flbl">วันที่ เริ่ม</span><input class="fi" id="df_date_from" type="date" oninput="renderDash()"></div>
+    <div class="fg3"><span class="flbl">วันที่ สิ้นสุด</span><input class="fi" id="df_date_to" type="date" oninput="renderDash()"></div>
     <button class="bs" onclick="clearDashFilts()" style="align-self:flex-end">✕ ล้าง</button>
   </div>
   <div class="dg" id="dCards"></div>
@@ -791,12 +793,26 @@ window._fbRef = null;
 
 function updateBadges() {
   var t  = allRows.length;
-  var ok = allRows.filter(function(r){ return r.display!=='no' && r.priceyn!=='no' && r.cond!=='no'; }).length;
-  ['allBdg','allCnt','sTotal'].forEach(function(id){
-    var el=document.getElementById(id); if(el) el.textContent=t;
-  });
-  var okEl=document.getElementById('sOk');   if(okEl)  okEl.textContent=ok;
-  var issEl=document.getElementById('sIss'); if(issEl) issEl.textContent=t-ok;
+  // allBdg (tab badge) always shows total unfiltered count
+  var bdgEl = document.getElementById('allBdg'); if(bdgEl) bdgEl.textContent = t;
+  // Summary bar reflects the currently filtered view
+  updateSummaryBar();
+}
+
+function updateSummaryBar() {
+  var activePg = document.querySelector('.pg.active');
+  var data;
+  if (activePg && activePg.id === 'pg-dash') {
+    data = typeof getDashData === 'function' ? getDashData() : allRows.slice();
+  } else {
+    data = typeof getFilteredRows === 'function' ? getFilteredRows() : allRows.slice();
+  }
+  var t  = data.length;
+  var ok = data.filter(function(r){ return r.display!=='no' && r.priceyn!=='no' && r.cond!=='no'; }).length;
+  var totalEl = document.getElementById('sTotal'); if(totalEl) totalEl.textContent = t;
+  var okEl    = document.getElementById('sOk');    if(okEl)    okEl.textContent    = ok;
+  var issEl   = document.getElementById('sIss');   if(issEl)   issEl.textContent   = t - ok;
+  var cntEl   = document.getElementById('allCnt'); if(cntEl)   cntEl.textContent   = t;
 }
 
 // ===== STORE DB =====
@@ -1083,16 +1099,18 @@ function getFilteredRows(){
   var fz   = document.getElementById('filt_zone')?.value || '';
   var fsm  = document.getElementById('filt_sm')?.value   || '';
   var fam  = document.getElementById('filt_am')?.value   || '';
-  var fd   = document.getElementById('filt_date')?.value || '';
+  var fdFrom = document.getElementById('filt_date_from')?.value || '';
+  var fdTo   = document.getElementById('filt_date_to')?.value   || '';
   var fi   = (document.getElementById('filt_item')?.value||'').trim();
   var fiss = document.getElementById('filt_iss')?.value  || '';
-  if (fs)   data = data.filter(function(r){ return fs.split(',').some(function(s){ return String(r.store).trim()===s.trim(); }); });
-  if (freg) data = data.filter(function(r){ return (r.regional||(getStoreInfo(r.store)||[])[2]||'')===freg; });
-  if (fz)   data = data.filter(function(r){ return (r.zone||(getStoreInfo(r.store)||[])[1]||'')===fz; });
-  if (fsm)  data = data.filter(function(r){ return (r.sm||(getStoreInfo(r.store)||[])[3]||'')===fsm; });
-  if (fam)  data = data.filter(function(r){ return (r.am||(getStoreInfo(r.store)||[])[4]||'')===fam; });
-  if (fd)   data = data.filter(function(r){ return r.date===fd; });
-  if (fi)   data = data.filter(function(r){ return r.itemno && r.itemno.includes(fi); });
+  if (fs)     data = data.filter(function(r){ return fs.split(',').some(function(s){ return String(r.store).trim()===s.trim(); }); });
+  if (freg)   data = data.filter(function(r){ return (r.regional||(getStoreInfo(r.store)||[])[2]||'')===freg; });
+  if (fz)     data = data.filter(function(r){ return (r.zone||(getStoreInfo(r.store)||[])[1]||'')===fz; });
+  if (fsm)    data = data.filter(function(r){ return (r.sm||(getStoreInfo(r.store)||[])[3]||'')===fsm; });
+  if (fam)    data = data.filter(function(r){ return (r.am||(getStoreInfo(r.store)||[])[4]||'')===fam; });
+  if (fdFrom) data = data.filter(function(r){ return r.date >= fdFrom; });
+  if (fdTo)   data = data.filter(function(r){ return r.date <= fdTo; });
+  if (fi)     data = data.filter(function(r){ return r.itemno && r.itemno.includes(fi); });
   if (fiss==='issue') data = data.filter(function(r){ return r.display==='no'||r.priceyn==='no'||r.cond==='no'; });
   if (fiss==='ok')    data = data.filter(function(r){ return r.display!=='no'&&r.priceyn!=='no'&&r.cond!=='no'; });
   return data;
@@ -1102,9 +1120,9 @@ function renderAll(){
   var tb = document.getElementById('allTblB');
   if (!tb) return;
   var data = getFilteredRows();
-  document.getElementById('allCnt').textContent = data.length;
   if (!data.length) {
     tb.innerHTML = '<tr><td colspan="23"><div class="es"><div class="ei">📊</div><div>ไม่มีข้อมูล</div></div></td></tr>';
+    updateSummaryBar();
     return;
   }
   tb.innerHTML = data.map(function(r,i){
@@ -1135,10 +1153,11 @@ function renderAll(){
       +'<td style="white-space:nowrap">'+rowActs(r)+'</td>'
       +'</tr>';
   }).join('');
+  updateSummaryBar();
 }
 
 function clearFilts(){
-  ['filt_store','filt_date','filt_item'].forEach(function(id){ document.getElementById(id).value=''; });
+  ['filt_store','filt_date_from','filt_date_to','filt_item'].forEach(function(id){ document.getElementById(id).value=''; });
   ['filt_reg','filt_zone','filt_sm','filt_am','filt_iss'].forEach(function(id){ document.getElementById(id).value=''; });
   populateFilterDropdowns(); renderAll();
 }
@@ -1262,24 +1281,29 @@ function getDashData(){
   var zone  = document.getElementById('df_zone')?.value  || '';
   var sm    = document.getElementById('df_sm')?.value    || '';
   var am    = document.getElementById('df_am')?.value    || '';
-  var store = (document.getElementById('df_store')?.value||'').trim();
-  var date  = document.getElementById('df_date')?.value  || '';
-  if(reg)   data=data.filter(function(r){return(r.regional||(getStoreInfo(r.store)||[])[2]||'')===reg;});
-  if(zone)  data=data.filter(function(r){return(r.zone||(getStoreInfo(r.store)||[])[1]||'')===zone;});
-  if(sm)    data=data.filter(function(r){return(r.sm||(getStoreInfo(r.store)||[])[3]||'')===sm;});
-  if(am)    data=data.filter(function(r){return(r.am||(getStoreInfo(r.store)||[])[4]||'')===am;});
-  if(store) data=data.filter(function(r){return String(r.store)===store;});
-  if(date)  data=data.filter(function(r){return r.date===date;});
+  var store    = (document.getElementById('df_store')?.value||'').trim();
+  var dateFrom = document.getElementById('df_date_from')?.value || '';
+  var dateTo   = document.getElementById('df_date_to')?.value   || '';
+  if(reg)      data=data.filter(function(r){return(r.regional||(getStoreInfo(r.store)||[])[2]||'')===reg;});
+  if(zone)     data=data.filter(function(r){return(r.zone||(getStoreInfo(r.store)||[])[1]||'')===zone;});
+  if(sm)       data=data.filter(function(r){return(r.sm||(getStoreInfo(r.store)||[])[3]||'')===sm;});
+  if(am)       data=data.filter(function(r){return(r.am||(getStoreInfo(r.store)||[])[4]||'')===am;});
+  if(store)    data=data.filter(function(r){return String(r.store)===store;});
+  if(dateFrom) data=data.filter(function(r){return r.date >= dateFrom;});
+  if(dateTo)   data=data.filter(function(r){return r.date <= dateTo;});
   return data;
 }
 function clearDashFilts(){
   ['df_reg','df_zone','df_sm','df_am'].forEach(function(id){document.getElementById(id).value='';});
-  document.getElementById('df_store').value=''; document.getElementById('df_date').value='';
+  document.getElementById('df_store').value='';
+  document.getElementById('df_date_from').value='';
+  document.getElementById('df_date_to').value='';
   populateFilterDropdowns(); renderDash();
 }
 
 function renderDash(){
   var data   = getDashData();
+  updateSummaryBar();
   var t      = data.length;
   var dn     = data.filter(function(r){return r.display==='no';}).length;
   var pn     = data.filter(function(r){return r.priceyn==='no';}).length;
@@ -1439,7 +1463,13 @@ document.getElementById('fItem') && document.getElementById('fItem').addEventLis
           ? Object.entries(data).map(function(e){ return Object.assign({}, e[1], {fbKey: e[0]}); })
           : [];
         showSync('online');
-        updateBadges(); renderMy(); renderAll(); renderDash();
+        updateBadges();
+        renderMy();
+        var activePg = document.querySelector('.pg.active');
+        if (activePg) {
+          if (activePg.id === 'pg-all')  renderAll();
+          if (activePg.id === 'pg-dash') renderDash();
+        }
       }, function(err){
         showSync('error');
         showToast('⚠️ Firebase: ' + err.message, true);
