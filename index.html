@@ -658,14 +658,14 @@ body.show-sb .sb{display:flex !important}
   <div class="tw"><div class="ts2"><table id="allTbl">
     <thead>
       <tr>
-        <th>#</th><th>Store</th><th>ชื่อสาขา</th><th>SM</th><th>วันที่</th><th>Dept</th>
+        <th>#</th><th>Store</th><th>ชื่อสาขา</th><th>วันที่</th><th>Dept</th>
         <th>Item No</th><th>Description</th><th>Price</th><th>Aging</th>
         <th>COM</th><th>COUNT</th><th>Diff</th>
         <th>Display</th><th>Remark</th><th>Price ตรง</th><th>Remark</th>
         <th>สภาพ</th><th>Remark</th><th>Action</th>
       </tr>
     </thead>
-    <tbody id="allTblB"><tr><td colspan="20"><div class="es"><div class="ei">📊</div><div>ยังไม่มีข้อมูล</div></div></td></tr></tbody>
+    <tbody id="allTblB"><tr><td colspan="19"><div class="es"><div class="ei">📊</div><div>ยังไม่มีข้อมูล</div></div></td></tr></tbody>
   </table></div></div>
 </div>
 
@@ -718,8 +718,8 @@ body.show-sb .sb{display:flex !important}
   </div>
   <div class="cs"><div class="ct">รายการที่พบปัญหา</div>
     <div style="overflow-x:auto"><table class="it" id="dIssT"><thead><tr>
-      <th>Store</th><th>Zone</th><th>SM</th><th>วันที่</th><th>Item No</th><th>Description</th>
-      <th>Display</th><th>Price</th><th>สภาพ</th><th>Diff</th>
+      <th style="width:60px">Store</th><th style="width:100px">วันที่</th><th style="width:90px">Item No</th><th style="min-width:220px">Description</th>
+      <th>Display</th><th>Price</th><th>สภาพ</th><th style="width:80px">Diff</th>
     </tr></thead><tbody id="dIssB"></tbody></table></div>
   </div>
   <div class="cs" style="margin-top:12px"><div class="ct">สรุปรายสาขา</div>
@@ -1245,23 +1245,21 @@ function renderAll(){
   if (!tb) return;
   var data = getFilteredRows();
   if (!data.length) {
-    tb.innerHTML = '<tr><td colspan="20"><div class="es"><div class="ei">📊</div><div>ไม่มีข้อมูล</div></div></td></tr>';
+    tb.innerHTML = '<tr><td colspan="19"><div class="es"><div class="ei">📊</div><div>ไม่มีข้อมูล</div></div></td></tr>';
     updateSummaryBar();
     return;
   }
   tb.innerHTML = data.map(function(r,i){
     var si    = getStoreInfo(r.store)||[];
     var sname = r.storeName || si[0] || '';
-    var sm    = r.sm       || si[3] || '';
     return '<tr>'
       +'<td>'+(i+1)+'</td>'
       +'<td class="mn2" style="font-weight:700">'+r.store+'</td>'
-      +'<td class="tdl" style="font-size:11px;max-width:150px">'+sname.replace('บมจ.ซีพี แอ็กซ์ตร้า ','')+'</td>'
-      +'<td style="font-size:10px;max-width:130px;word-break:break-word">'+sm+'</td>'
-      +'<td style="font-size:10px;white-space:nowrap">'+fmtDate(r.date)+'</td>'
+      +'<td class="tdl" style="font-size:11px;white-space:nowrap">'+sname.replace('บมจ.ซีพี แอ็กซ์ตร้า ','')+'</td>'
+      +'<td style="font-size:11px;white-space:nowrap">'+fmtDate(r.date)+'</td>'
       +'<td>'+(r.dept||'-')+'</td>'
       +'<td class="mn2" style="font-weight:700">'+r.itemno+'</td>'
-      +'<td class="tdl dsc"><div class="dn3">'+r.desc+'</div></td>'
+      +'<td class="tdl" style="font-size:12px;white-space:nowrap">'+r.desc+'</td>'
       +'<td class="mn2">'+((r.price||0).toLocaleString())+'</td>'
       +'<td>'+agBdg(r.aging)+'</td>'
       +'<td class="mn2">'+r.com+'</td><td class="mn2">'+r.count+'</td>'
@@ -1562,17 +1560,15 @@ function renderDash(){
     var si=getStoreInfo(r.store)||[];
     return '<tr>'
       +'<td><span class="sch">'+r.store+'</span></td>'
-      +'<td><span class="sch">'+(r.zone||si[1]||'')+'</span></td>'
-      +'<td style="font-size:10px;max-width:120px">'+(r.sm||si[3]||'')+'</td>'
-      +'<td style="font-size:10px">'+fmtDate(r.date)+'</td>'
+      +'<td style="font-size:11px;white-space:nowrap">'+fmtDate(r.date)+'</td>'
       +'<td class="mn2" style="font-weight:700">'+r.itemno+'</td>'
-      +'<td style="font-size:11px;max-width:140px">'+r.desc+'</td>'
+      +'<td class="tdl" style="font-size:12px">'+r.desc+'</td>'
       +'<td>'+(r.display==='no'?'<span class="bdg bn">NO</span><br><small style="font-size:9px;color:var(--critical)">'+(r.rmDisplay||'')+'</small>':'<span class="bdg by">YES</span>')+'</td>'
       +'<td>'+(r.priceyn==='no'?'<span class="bdg bn">NO</span><br><small style="font-size:9px;color:var(--critical)">'+(r.rmPrice||'')+'</small>':'<span class="bdg by">YES</span>')+'</td>'
       +'<td>'+(r.cond==='no'?'<span class="bdg bn">NO</span><br><small style="font-size:9px;color:var(--critical)">'+(r.rmCond||'')+'</small>':'<span class="bdg by">YES</span>')+'</td>'
       +'<td>'+diffCell(r.diff)+'</td>'
       +'</tr>';
-  }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--ink-muted);padding:16px">✅ ไม่พบรายการที่มีปัญหา</td></tr>';
+  }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--ink-muted);padding:16px">✅ ไม่พบรายการที่มีปัญหา</td></tr>';
 
   var stb = document.getElementById('dStB');
   stb.innerHTML = stores.length ? stores.map(function(s){
