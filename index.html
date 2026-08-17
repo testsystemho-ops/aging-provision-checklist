@@ -390,13 +390,13 @@ body.show-sb .mn{padding-bottom:68px}
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--hairline);border-radius:var(--pill)}
-.role-soa .be{display:none}
+/* SOA can delete own session items — no blanket hide */
 
 /* ===== SYNC STATUS ===== */
 .sync-status{font-size:11px;font-weight:700;padding:4px 12px;border-radius:var(--pill);display:inline-flex;align-items:center;gap:5px}
 
-/* ===== HIDE SESSION TABLE + SUMMARY BAR ON บันทึก TAB ===== */
-#pg-chk .sh, #pg-chk .tw, .sb{display:none !important}
+/* ===== SUMMARY BAR — only shown on ข้อมูลทั้งหมด / Dashboard ===== */
+.sb{display:none !important}
 body.show-sb .sb{display:flex !important}
 .sync-status.online{background:rgba(22,163,74,.15);color:var(--success)}
 .sync-status.syncing{background:rgba(217,119,6,.15);color:var(--warning);animation:pulse 1s infinite}
@@ -594,7 +594,7 @@ body.show-sb .sb{display:flex !important}
   </div>
 
   <div class="sh">
-    <div class="st2">รายการของฉัน (Session นี้) <span class="bc" id="myCnt">0</span></div>
+    <div class="st2">รายการที่เพิ่มในครั้งนี้ <span class="bc" id="myCnt">0</span></div>
     <div class="ta">
       <button class="bs" onclick="exportMyCSV()">⬇ Export CSV</button>
       <button class="bs dng" onclick="clearMy()">🗑 ล้าง</button>
@@ -746,6 +746,9 @@ body.show-sb .sb{display:flex !important}
     <h3>✏️ แก้ไขรายการ</h3>
     <input type="hidden" id="eId">
     <div class="mg">
+      <div class="mf2"><label>Store No.</label><input class="mi2" id="eStore" type="text" list="storeList"></div>
+      <div class="mf2"><label>วันที่ตรวจ</label><input class="mi2" id="eDate" type="date"></div>
+      <div class="mf2"><label>ผู้ตรวจ</label><input class="mi2" id="eAuditor" type="text"></div>
       <div class="mf2"><label>Item No</label><input class="mi2" id="eItem" type="text"></div>
       <div class="mf2"><label>Dept</label><input class="mi2" id="eDept" type="text"></div>
       <div class="mf2" style="grid-column:span 2"><label>Description</label><input class="mi2" id="eDesc" type="text"></div>
@@ -1179,7 +1182,7 @@ function diffCell(d){
 }
 function rowActs(r){
   var canEdit = CU && (CU.role==='admin' || CU.role==='soa');
-  var canDel  = CU && CU.role==='admin';
+  var canDel  = CU && (CU.role==='admin' || (CU.role==='soa' && sessionIds.has(r.id)));
   var b = '';
   if (canEdit) b += '<button class="bed" onclick="openEdit(\''+r.fbKey+'\')">✏</button>';
   if (canDel)  b += '<button class="be"  onclick="delRow(\''+r.fbKey+'\')">✕</button>';
@@ -1193,7 +1196,7 @@ function renderMy(){
   var my = allRows.filter(function(r){ return sessionIds.has(r.id); });
   document.getElementById('myCnt').textContent = my.length;
   if (!my.length) {
-    tb.innerHTML = '<tr><td colspan="17"><div class="es"><div class="ei">📦</div><div>ยังไม่มีรายการใน Session นี้</div></div></td></tr>';
+    tb.innerHTML = '<tr><td colspan="17"><div class="es"><div class="ei">📦</div><div>ยังไม่มีรายการที่เพิ่มในครั้งนี้</div></div></td></tr>';
     return;
   }
   tb.innerHTML = my.map(function(r,i){
@@ -1286,7 +1289,7 @@ function delRow(fbKey){
 }
 function clearMy(){
   if (!sessionIds.size) return;
-  if (!confirm('ลบ '+sessionIds.size+' รายการใน Session นี้?')) return;
+  if (!confirm('ลบ '+sessionIds.size+' รายการที่เพิ่มในครั้งนี้?')) return;
   var keys = allRows.filter(function(r){ return sessionIds.has(r.id); }).map(function(r){ return r.fbKey; });
   var done = 0;
   keys.forEach(function(k){ fbDelete(k, function(){ done++; if(done===keys.length){ sessionIds.clear(); showToast('ล้าง Session แล้ว'); } }); });
@@ -1297,17 +1300,25 @@ function openEdit(fbKey){
   var r = allRows.find(function(x){ return x.fbKey===fbKey; });
   if (!r) return;
   document.getElementById('eId').value = fbKey;
-  ['Item','Dept','Desc','Aging'].forEach(function(k){ document.getElementById('e'+k).value = r[k.toLowerCase()]||''; });
-  document.getElementById('ePrice').value = r.price;
-  document.getElementById('eCom').value   = r.com;
-  document.getElementById('eCnt').value   = r.count;
-  document.getElementById('eDiff').value  = r.diff===0?'0.00':(r.diff>0?'+'+parseFloat(r.diff).toFixed(2):parseFloat(r.diff).toFixed(2));
-  document.getElementById('eDisp').value  = r.display  || '';
-  document.getElementById('ePrYN').value  = r.priceyn  || '';
-  document.getElementById('eCond').value  = r.cond     || '';
-  document.getElementById('eRmD').value   = r.rmDisplay|| '';
-  document.getElementById('eRmP').value   = r.rmPrice  || '';
-  document.getElementById('eRmC').value   = r.rmCond   || '';
+  // Load all fields correctly (itemno not item)
+  document.getElementById('eStore').value   = r.store    || '';
+  document.getElementById('eDate').value    = r.date     || '';
+  document.getElementById('eAuditor').value = r.auditor  || '';
+  document.getElementById('eItem').value    = r.itemno   || '';
+  document.getElementById('eDept').value    = r.dept     || '';
+  document.getElementById('eDesc').value    = r.desc     || '';
+  document.getElementById('eAging').value   = r.aging    || '';
+  document.getElementById('ePrice').value   = r.price    || 0;
+  document.getElementById('eCom').value     = r.com      || 0;
+  document.getElementById('eCnt').value     = r.count    || 0;
+  var d = (parseFloat(r.count)||0) - (parseFloat(r.com)||0);
+  document.getElementById('eDiff').value    = d===0?'0.00':(d>0?'+'+d.toFixed(2):d.toFixed(2));
+  document.getElementById('eDisp').value    = r.display  || '';
+  document.getElementById('ePrYN').value    = r.priceyn  || '';
+  document.getElementById('eCond').value    = r.cond     || '';
+  document.getElementById('eRmD').value     = r.rmDisplay|| '';
+  document.getElementById('eRmP').value     = r.rmPrice  || '';
+  document.getElementById('eRmC').value     = r.rmCond   || '';
   [['d',r.display,'eynD'],['p',r.priceyn,'eynP'],['c',r.cond,'eynC']].forEach(function(arr){
     document.querySelectorAll('#'+arr[2]+' .myb').forEach(function(b){ b.classList.remove('active'); });
     if (arr[1]) { var b=document.querySelector('#'+arr[2]+' .myb.'+arr[1]); if(b) b.classList.add('active'); }
@@ -1330,16 +1341,20 @@ function saveEdit(){
   var r = allRows.find(function(x){ return x.fbKey===fbKey; }); if(!r) return;
   var c  = parseFloat(document.getElementById('eCom').value)  ||0;
   var n  = parseFloat(document.getElementById('eCnt').value)  ||0;
-  var si = getStoreInfo(r.store)||[];
+  var newStore = document.getElementById('eStore').value.trim() || r.store;
+  var si = getStoreInfo(newStore)||[];
   var updated = {};
   // Copy all existing fields first
   Object.keys(r).forEach(function(k){ updated[k]=r[k]; });
   Object.assign(updated, {
-    itemno: document.getElementById('eItem').value.trim(),
-    dept:   document.getElementById('eDept').value.trim(),
-    desc:   document.getElementById('eDesc').value.trim(),
-    price:  parseFloat(document.getElementById('ePrice').value)||0,
-    aging:  document.getElementById('eAging').value.trim(),
+    store:     newStore,
+    date:      document.getElementById('eDate').value || r.date,
+    auditor:   document.getElementById('eAuditor').value.trim(),
+    itemno:    document.getElementById('eItem').value.trim(),
+    dept:      document.getElementById('eDept').value.trim(),
+    desc:      document.getElementById('eDesc').value.trim(),
+    price:     parseFloat(document.getElementById('ePrice').value)||0,
+    aging:     document.getElementById('eAging').value.trim(),
     com: c, count: n, diff: n-c,
     display:   document.getElementById('eDisp').value,
     priceyn:   document.getElementById('ePrYN').value,
@@ -1722,7 +1737,8 @@ document.getElementById('fItem') && document.getElementById('fItem').addEventLis
                   'com','count','diff','display','rmDisplay','priceyn','rmPrice',
                   'cond','rmCond','storeName','zone','regional','sm','am'];
     var o = {};
-    fields.forEach(function(k){ if(r[k]!==undefined && r[k]!==null && r[k]!=='') o[k]=r[k]; });
+    // Keep all defined fields — allow empty string so edits that clear a value are saved
+    fields.forEach(function(k){ if(r[k]!==undefined && r[k]!==null) o[k]=r[k]; });
     return o;
   }
 })();
