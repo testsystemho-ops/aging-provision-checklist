@@ -740,28 +740,47 @@ body.show-sb .sb{display:flex !important}
 
 // ===== AUTH =====
 var USERS = {
-  soa:   { pass: 'makroho', role: 'soa',   label: 'SOA User' },
-  admin: { pass: 'adminho', role: 'admin', label: 'Admin' },
-  soa1:  { pass: 'makroho', role: 'soa',   label: 'SOA User 1' },
-  soa2:  { pass: 'makroho', role: 'soa',   label: 'SOA User 2' },
-  soa3:  { pass: 'makroho', role: 'soa',   label: 'SOA User 3' },
-  soa4:  { pass: 'makroho', role: 'soa',   label: 'SOA User 4' },
-  soa5:  { pass: 'makroho', role: 'soa',   label: 'SOA User 5' },
-  soa6:  { pass: 'makroho', role: 'soa',   label: 'SOA User 6' },
-  soa7:  { pass: 'makroho', role: 'soa',   label: 'SOA User 7' },
-  soa8:  { pass: 'makroho', role: 'soa',   label: 'SOA User 8' },
-  soa9:  { pass: 'makroho', role: 'soa',   label: 'SOA User 9' },
-  soa10: { pass: 'makroho', role: 'soa',   label: 'SOA User 10' },
-  soa11: { pass: 'makroho', role: 'soa',   label: 'SOA User 11' },
-  soa12: { pass: 'makroho', role: 'soa',   label: 'SOA User 12' },
-  soa13: { pass: 'makroho', role: 'soa',   label: 'SOA User 13' },
-  soa14: { pass: 'makroho', role: 'soa',   label: 'SOA User 14' },
-  soa15: { pass: 'makroho', role: 'soa',   label: 'SOA User 15' },
-  soa16: { pass: 'makroho', role: 'soa',   label: 'SOA User 16' },
-  soa17: { pass: 'makroho', role: 'soa',   label: 'SOA User 17' },
-  soa18: { pass: 'makroho', role: 'soa',   label: 'SOA User 18' },
-  soa19: { pass: 'makroho', role: 'soa',   label: 'SOA User 19' },
-  soa20: { pass: 'makroho', role: 'soa',   label: 'SOA User 20' }
+  // ── Regional SOA ──
+  rsoa1:  { pass: 'makroho', role: 'admin', label: 'ตุ้ม' },
+  rsoa2:  { pass: 'makroho', role: 'admin', label: 'ป๊อก' },
+  rsoa3:  { pass: 'makroho', role: 'admin', label: 'หนึ่ง' },
+  rsoa4:  { pass: 'makroho', role: 'admin', label: 'ตุ้ม' },
+  // ── SOA ──
+  soa1:   { pass: 'makroho', role: 'admin', label: 'เอ' },
+  soa2:   { pass: 'makroho', role: 'admin', label: 'หนุ่ย' },
+  soa3:   { pass: 'makroho', role: 'admin', label: 'เมย์' },
+  soa4:   { pass: 'makroho', role: 'admin', label: 'พิมพ์' },
+  soa5:   { pass: 'makroho', role: 'admin', label: 'ดา' },
+  soa6:   { pass: 'makroho', role: 'admin', label: 'แอน' },
+  soa7:   { pass: 'makroho', role: 'admin', label: 'ก๊อต' },
+  soa8:   { pass: 'makroho', role: 'admin', label: 'ออย' },
+  soa9:   { pass: 'makroho', role: 'admin', label: 'อ๊อก' },
+  soa10:  { pass: 'makroho', role: 'admin', label: 'แพรวา' },
+  soa11:  { pass: 'makroho', role: 'admin', label: 'ท๊อป' },
+  soa12:  { pass: 'makroho', role: 'admin', label: 'อ้อ' },
+  soa13:  { pass: 'makroho', role: 'admin', label: 'เสถียร' },
+  soa14:  { pass: 'makroho', role: 'admin', label: 'อาร์ต' },
+  soa15:  { pass: 'makroho', role: 'admin', label: 'ติ๊ก' },
+  soa16:  { pass: 'makroho', role: 'admin', label: 'บุ๋ม' },
+  soa17:  { pass: 'makroho', role: 'admin', label: 'ปอนด์' },
+  // ── INV (Inventory) ──
+  inv1:   { pass: 'makroho', role: 'admin', label: 'ทอม' },
+  inv2:   { pass: 'makroho', role: 'admin', label: 'ท๊อป' },
+  inv3:   { pass: 'makroho', role: 'admin', label: 'ปิ๊ก' },
+  inv4:   { pass: 'makroho', role: 'admin', label: 'มอส' },
+  inv5:   { pass: 'makroho', role: 'admin', label: 'ปอ' },
+  inv6:   { pass: 'makroho', role: 'admin', label: 'มิน' },
+  inv7:   { pass: 'makroho', role: 'admin', label: 'โอ๊ต' },
+  inv8:   { pass: 'makroho', role: 'admin', label: 'เมย์' },
+  inv9:   { pass: 'makroho', role: 'admin', label: 'แนน' },
+  inv10:  { pass: 'makroho', role: 'admin', label: 'เนท' },
+  inv11:  { pass: 'makroho', role: 'admin', label: 'อั๋น' },
+  inv12:  { pass: 'makroho', role: 'admin', label: 'เน' },
+  inv13:  { pass: 'makroho', role: 'admin', label: 'เจ' },
+  inv14:  { pass: 'makroho', role: 'admin', label: 'ผึ้ง' },
+  inv15:  { pass: 'makroho', role: 'admin', label: 'ไก่' },
+  // ── Admin ──
+  admin:  { pass: 'adminho', role: 'admin', label: 'ผู้ดูแลระบบ' }
 };
 var CU = null;
 
@@ -782,8 +801,14 @@ function doLogin() {
       document.getElementById('appPage').style.display  = 'block';
       // Update UI
       document.getElementById('uName').textContent = CU.label;
-      document.getElementById('uRole').textContent = CU.username;
-      document.body.classList.toggle('role-soa', CU.role === 'soa');
+      // Show user type badge (RSOA/SOA/INV/Admin)
+      var uUpper = CU.username.toUpperCase();
+      var userType = uUpper.indexOf('RSOA')===0 ? 'RSOA'
+                   : uUpper.indexOf('SOA')===0  ? 'SOA'
+                   : uUpper.indexOf('INV')===0  ? 'INV'
+                   : 'Admin';
+      document.getElementById('uRole').textContent = userType;
+      document.body.classList.toggle('role-soa', false);
       // Theme
       var savedTheme = (typeof localStorage !== 'undefined' && localStorage.getItem('aging_theme')) || 'blue';
       setTheme(savedTheme);
